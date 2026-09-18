@@ -192,6 +192,12 @@ select {
   flex: 1;
 }
 
+.field-static {
+  font-size: 13px;
+  color: var(--ink);
+  padding: 6px 0;
+}
+
 .checkbox-line {
   display: flex;
   align-items: center;

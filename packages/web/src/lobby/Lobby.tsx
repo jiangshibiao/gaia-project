@@ -1,26 +1,18 @@
 /**
  * 大厅与房间等待视图（M2c，架构照 Brass web 适配盖亚协议）。
- * - Lobby：创建房间（昵称 + 人数 2-4 + Lost Fleet 开关 + AI 席位数与难度 + 可选种子）
- *   / 加入房间（昵称 + 房码）/ 导入复盘（粘贴记录 JSON 或选文件 → import_game，
- *   服务器重放校验通过进入复盘模式，失败错误展示在大厅）三个面板；
- *   未连接或昵称为空时提交不可用；服务器错误（room-not-found 等）直接展示。
+ * - Lobby：创建房间（昵称 + 人数 2-4 + Lost Fleet 开关 + AI 席位数（固定内置
+ *   启发式，无难度选项）+ 可选种子）/ 加入房间（昵称 + 房码）/ 导入复盘（粘贴
+ *   记录 JSON 或选文件 → import_game，服务器重放校验通过进入复盘模式，失败错误
+ *   展示在大厅）三个面板；未连接或昵称为空时提交不可用；服务器错误直接展示。
  * - RoomView：房码卡片（一键复制）、座位列表（昵称/在线/"我"/AI 徽章与难度）、
  *   就位进度、开始按钮（真人≥1 且 真人+AI ≥ 总人数）、离开房间。
  */
 import { useState } from 'react';
 import type { FormEvent, ReactElement, ReactNode } from 'react';
-import type { AIDifficulty, FactionMode, GameRecord, RoomConfig } from '@gaia/protocol';
+import type { FactionMode, GameRecord, RoomConfig } from '@gaia/protocol';
 import type { GameStore } from '../game/store';
 import { useGameStore } from '../game/store';
 import { DraftView } from './DraftView';
-
-/** AI 难度中文标签。 */
-const AI_DIFFICULTY_LABEL: Record<AIDifficulty, string> = {
-  easy: '简单',
-  normal: '普通',
-  hard: '困难',
-};
-const AI_DIFFICULTIES: readonly AIDifficulty[] = ['easy', 'normal', 'hard'];
 
 /** 种族选取方案中文标签。 */
 const FACTION_MODE_LABEL: Record<FactionMode, string> = {
@@ -80,7 +72,6 @@ export function Lobby({ store }: { store: GameStore }): ReactElement {
   const [lostFleet, setLostFleet] = useState(true);
   const [factionMode, setFactionMode] = useState<FactionMode>('random');
   const [aiCount, setAiCount] = useState('0');
-  const [aiDifficulty, setAiDifficulty] = useState<AIDifficulty>('normal');
   const [seedText, setSeedText] = useState('');
   const [joinNick, setJoinNick] = useState('');
   const [joinCode, setJoinCode] = useState('');
@@ -98,9 +89,10 @@ export function Lobby({ store }: { store: GameStore }): ReactElement {
       config.seed = seed;
     }
     const ai = Number(aiCount);
-    // 合法域 0..playerCount-1（选项已 clamp，这里再守一道）
+    // 合法域 0..playerCount-1（选项已 clamp，这里再守一道）。
+    // AI 固定为内置启发式（builtin:heuristic2，服务器默认 spec），难度字段仅协议兼容。
     if (Number.isInteger(ai) && ai >= 1 && ai <= config.playerCount - 1) {
-      config.aiSeats = Array.from({ length: ai }, () => ({ difficulty: aiDifficulty }));
+      config.aiSeats = Array.from({ length: ai }, () => ({ difficulty: 'normal' as const }));
     }
     store.createRoom(nickname, config);
   };
@@ -217,18 +209,10 @@ export function Lobby({ store }: { store: GameStore }): ReactElement {
               </select>
             </Field>
             {aiCount !== '0' ? (
-              <Field label="AI 难度">
-                <select
-                  data-testid="create-ai-difficulty"
-                  value={aiDifficulty}
-                  onChange={(e) => setAiDifficulty(e.target.value as AIDifficulty)}
-                >
-                  {AI_DIFFICULTIES.map((d) => (
-                    <option key={d} value={d}>
-                      {AI_DIFFICULTY_LABEL[d]}
-                    </option>
-                  ))}
-                </select>
+              <Field label="AI 强度">
+                <span className="field-static" data-testid="create-ai-difficulty">
+                  启发式（内置）
+                </span>
               </Field>
             ) : null}
           </div>
@@ -426,7 +410,7 @@ export function RoomView({ store }: { store: GameStore }): ReactElement {
                         <>
                           <span className="seat-name">AI 席位</span>
                           <span className="ai-badge" data-testid={`seat-${i}-ai-badge`}>
-                            {AI_DIFFICULTY_LABEL[room.config.aiSeats[0]?.difficulty ?? 'normal']} · 开局加入
+                            启发式 · 开局加入
                           </span>
                         </>
                       ) : (
