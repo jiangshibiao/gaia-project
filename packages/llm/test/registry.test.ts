@@ -10,9 +10,9 @@ describe('agent registry', () => {
     expect(specs).toContain('builtin:heuristic');
   });
 
-  it('DEFAULT_SPEC 指向 heuristic 插件', () => {
-    expect(DEFAULT_SPEC).toBe('builtin:heuristic');
-    expect(resolveAgentPlugin(DEFAULT_SPEC).meta.name).toBe('heuristic');
+  it('DEFAULT_SPEC 指向 heuristic2 插件', () => {
+    expect(DEFAULT_SPEC).toBe('builtin:heuristic2');
+    expect(resolveAgentPlugin(DEFAULT_SPEC).meta.name).toBe('heuristic2');
   });
 
   it('rejects unknown specs', () => {

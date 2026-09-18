@@ -27,7 +27,6 @@
  * submitAction（再失败才放弃，等下次触发），对局永不卡死。
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { randomBytes } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
@@ -35,7 +34,7 @@ import { PROTOCOL_VERSION, actorOf, filterStateFor } from '@gaia/protocol';
 import type { ClientMessage, GameRecord, ServerMessage } from '@gaia/protocol';
 import { applyAction, enumerateActions, newGame } from '@gaia/engine';
 import type { Action, FactionId, GameConfig, PlayerIndex } from '@gaia/engine';
-import { DEFAULT_SPEC, agentFactoryFromSpec, listAgentPlugins } from '@gaia/llm';
+import { DEFAULT_SPEC, agentFactoryFromSpec, listAgentPlugins, pickFactionByStrength } from '@gaia/llm';
 import type { DecidingAgent, Difficulty } from '@gaia/llm';
 import { RoomError, RoomManager, toRoomState, type Room, type Seat } from './rooms.js';
 import { DraftError, applyDraftPick, draftFactionPool } from './draft.js';
@@ -386,9 +385,10 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
 
   /**
    * draft 阶段的 AI 驱动：startGame/draft_pick/draft_bid/resume 后触发（幂等）。
-   * AI 策略从简（与任务约定一致）：friendly 随机选可用族；auction 随机选可用族
-   * 出价 0 持有、从不抬价（被挤后轮到它时重新随机选空闲族——18/14 族池大于
-   * 人数，空闲族恒存在）。任何未预期异常 → 取首个可用族兜底，draft 永不卡死。
+   * AI 策略：按 FACTION_STRENGTH 强度表（@gaia/llm，base/LF 分表）选可用池中
+   * 最强族；auction 出价 0 持有、从不抬价（被挤后轮到它时重新选最强空闲族——
+   * 18/14 族池大于人数，空闲族恒存在）。任何未预期异常 → 取首个可用族兜底，
+   * draft 永不卡死。
    */
   async function driveDraftAI(room: Room): Promise<void> {
     if (draftDriving.has(room.code)) return;
@@ -401,10 +401,10 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
         if (actor === null) break;
         const seat = room.seats[actor];
         if (seat === null || seat === undefined || !seat.isAI) break;
-        const pool = draftFactionPool(room.config.lostFleet ?? true);
+        const lostFleet = room.config.lostFleet ?? true;
+        const pool = draftFactionPool(lostFleet);
         try {
-          const avail = draft.available;
-          const faction = avail[randomBytes(4).readUInt32LE(0) % avail.length];
+          const faction = pickFactionByStrength(draft.available, lostFleet ? 'lostFleet' : 'base');
           if (faction === undefined) break; // 防御：理论不可达
           applyDraftPick(draft, pool, actor, faction);
           broadcastDraftState(room);

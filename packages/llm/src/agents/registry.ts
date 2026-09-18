@@ -7,15 +7,17 @@ import type { AgentContext, AgentPlugin } from './contract.js';
 import type { DecidingAgent, Decision } from '../decision.js';
 import firstLegal from './first-legal.js';
 import heuristic from './heuristic.js';
+import heuristic2 from './heuristic2.js';
 import random from './random.js';
 
 const BUILTIN_PLUGINS: Record<string, AgentPlugin> = {
   'first-legal': firstLegal,
   heuristic,
+  heuristic2,
   random,
 };
 
-export const DEFAULT_SPEC = 'builtin:heuristic';
+export const DEFAULT_SPEC = 'builtin:heuristic2';
 
 export interface AgentPluginInfo {
   spec: string;

@@ -11,7 +11,7 @@
 - `packages/protocol`（`@gaia/protocol`）：ws 消息类型（带版本号）+ `actorOf` + `filterStateFor`（仅剥 `rngState`，盖亚无隐藏信息）。
 - `packages/server`（`@gaia/server`）：权威 WebSocket 服务器（房间码/token/重连/SQLite 重放恢复/AI 座位/draft 选族）。
 - `packages/web`（`@gaia/web`）：React + Vite 客户端，SVG 棋盘，原版美术素材。
-- `packages/llm`（`@gaia/llm`）：AI 层——AgentPlugin 插件契约 + registry + 启发式 + LLM 决策链 + bench。
+- `packages/llm`（`@gaia/llm`）：AI 层——AgentPlugin 插件契约 + registry + 启发式 v1/v2 + LLM 决策链 + bench。
 
 常用命令：
 
@@ -21,7 +21,8 @@ npm run fetch-assets -w @gaia/web  # 素材缺失时先跑（见下「素材与�
 npm run dev -w @gaia/server   # ws :8430, SQLite packages/server/gaia.db
 npm run dev -w @gaia/web      # vite :5175（局域网加 -- --host 0.0.0.0）
 npm run typecheck && npm test # 全仓（目前 541+ 全绿）
-npm run bench -w @gaia/llm -- --agents heuristic,random --games 20 --mirror --concurrency 4
+npm run bench -w @gaia/llm -- --agents heuristic2,random --games 20 --mirror --concurrency 4
+# 内战均分/随机种族池/无扩展变体见下方「AI（heuristic2）」节
 # 注入一局中期对局供人工检查（打印房码/token/localStorage 一行）：
 npx vite-node reference/harness/seed-midgame.ts <轮数>
 ```
@@ -83,9 +84,88 @@ Etchelon/boardgamers viewer/uiqoo/Feuerland/BGG 等公开来源重建（约 300 
 - **初始地图偏小**：默认 21.6° 旋转用旋转矩形外接框当 viewBox，把包围框无谓放大 ~30%。改用 `rotatedPointsViewBox`（旋转后 hex 中心紧致包围盒）。
 - **截图验证**：chrome headless（`--headless --screenshot --window-size --force-device-scale-factor=2`）+ preview.html（不进生产 bundle）是 UI 验收主路径。
 
+## AI（heuristic2，v2 估价框架）
+
+默认 AI 是 `builtin:heuristic2`（registry DEFAULT_SPEC；v1 `builtin:heuristic` 保留作
+LLM 预筛/兜底与 bench 基线）。架构参照 BrassBirmingham 的 CFG + overrides 模式，
+代码在 `packages/llm/src/heuristic2/`：
+
+- `cfg.ts`：全部权重集中在 `BASE_CFG`（每个参数注明攻略/bench 来源）；**变体显式
+  区分**——`LF_DELTA` 仅在 `lostFleet=true` 时深合并（扩展改变估价体系：LF 行星类型
+  升值、探船升值等）。版本/调参差异 = `DeepPartial<Cfg>` overrides（`createEvalPlugin`
+  的 `tuneEnvVar: GAIA_TUNE_V2` 可注入 JSON 做消融）。
+- `context.ts`：`evalCtx(state, seat)` 合并链 BASE→LF_DELTA→插件 overrides→族增量，
+  WeakMap 缓存（带 overrides 不缓存——调参路径）。
+- `values.ts`/`score.ts`：行动快评（纯函数不仿真，VP 等值）。资源表用社区量化结论
+  （BGG 2122654：ore=knowledge=3、QIC=4、power token=2、充能 0.75、credit=1）；
+  分阶段权重（R1-2 经济/R3-4 转化/R5-6 VP 冲刺：收入贴现、库存贬值、leech 意愿
+  R1-4>1/R6<1）；回合计分板看本轮+下轮（下轮 nextRoundMult 折预期）；第 3 联邦
+  额外奖励（社区共识：3 联邦是获胜底线）。
+- `position.ts`：局面叶估值（已入账 VP + 库存×阶段权重 + 总收入 NPV + 研究轨里程碑
+  + 持有片折算 + 联邦重结算期望 + **终局计分零和位次期望**（finalCount 实时比位次，
+  并列按引擎口径均分））。
+- `lookahead.ts`：按行动域 topK 剪枝（Brass 经验 K 大反而差）→ applyAction(assumeLegal)
+  仿真 → 仍我方行动则 +alpha×次动分 → +leafWeight×叶估值。仿真失败退回静态分。
+- `factions.ts`：种族插件 `FactionHooks { cfg(variant), adjustAction, adjustFinal }`
+  （Nevlas/Taklons 充能升值、Gleens 盖亚矿+2、Geodens PI 后新类型+6、Lantids 行星
+  类型/盖亚终局归零、Ivits 终局减半+早联邦奖励、Terrans 仅 base 给盖亚溢价等）；
+  `FACTION_STRENGTH` 按变体分表的 draft 强度表（LF 里 Terrans 底层、Ivits 最强），
+  server draft AI 已接线（`pickFactionByStrength`）。
+
+验证方法（指标 = **内战均分** + 对基线胜率；同代码镜像局必然完全重复，镜像只对
+异构对抗有意义）：
+
+```bash
+# 内战均分（固定种族池，跨轮可比）：
+npx vite-node packages/llm/bench/run.ts --agents heuristic2,heuristic2,heuristic2,heuristic2 --games 10 --concurrency 8
+# 随机种族池（覆盖面）加 --factions random；base 变体加 --no-lf
+# 对抗基线：
+npx vite-node packages/llm/bench/run.ts --agents heuristic2,heuristic,heuristic2,heuristic --games 10 --concurrency 8
+```
+
+v2 数据（4p LF 固定池 20 种子，2026-09-18 调优后）：内战均分 ~75（v1 为 50.6）；
+每局最高分的均值 ~95，**破百（≥100 VP）约 1/3 局**，峰值 125-130；2v2 对抗 v1
+胜率 42.5% vs 10.0%。base 变体反而更高（均分 82、最高均值 99.6）——LF 组件更多，
+贪吃法差距更大。与人类（150-200）的差距集中在规划层：联邦平均只成 1 个（人类 3 个，
+受凑组几何与 21 电力总量约束）、高级片常年 0（L4 轨+未翻绿面票+可覆盖片+拿板行动
+四条件难以同时满足）、QIC 经济微弱。要再上一档需要多步规划（联邦形状/高级片时序），
+不是权重调参能解决的。
+
+调优方法论（本仓已验证的结论，勿再走弯路）：
+
+- **前瞻与叶估值是主力**：关前瞻 −14 分；leafWeight 1.2 是峰值（0.6/1.6/2.0 都更差）；
+  alpha 0.5 优于 0.7；候选 topK 加宽更差（Brass 同结论）。
+- **"富"叶估值优于去重叶估值**（−9 分）：库存/收入/里程碑与行动分口径重叠不是 bug，
+  候选间比较要的是位置完整排序。leaf 还含联邦组潜力（(pv/7)² 凸形）。
+- **资源量纲 2.5/2.5/4（ore/knowledge/qic）是峰值**（2/2/3 与 3/3/4.5 都更差）——
+  社区交换表（3/3/4）对 AI 偏"抠"，会拒绝必要扩张。
+- **凑组拉力要凸形**：(pv/7)²×40 有效凑出 1 个联邦；已入联邦格+邻格（禁入区）不计入
+  新组 pv，否则拉力被已完成的联邦吸走。初始矿无法聚拢（母星类型全图仅 2-3 格且分散）。
+- **第二座学院给惩罚**（6o+6c 极贵、AC2 无收入轨）；TS 给固定溢价（经济骨干+电力密度）。
+- **高级片**：溢价 +8、翻面门票按机会成本定价（3+0.25×资源面）——但瓶颈不在分，
+  在四条件同时满足（票随联邦数，联邦是上游）。
+- bench 工具：`diagnose.ts`（终局面貌+行动直方图+机会vs选择+VP 构成+联邦组探测）、
+  `probe.ts`（指定座位逐决策 Top 候选+组 pv）；`GAIA_BENCH_FACTIONS` 可换固定池。
+
+深搜探索（2026-09-18 归档，默认关）：
+
+- **max^n（search.ts）**：全座位确定性深搜（每个行动者按自己叶估值取 max）。
+  方向正确但成本爆炸——4p 下到我下个主行动需 5-6 ply，caps[12,8,5,4]+预算 30000
+  时 ~7 分钟/局，弃用（代码保留，`search.enabled` 开关）。
+- **自我深搜（selfsearch.ts，"假设不碰撞"）**：只展开我的行动序列，对手占位
+  （主阶段恒 pass——直接构造 `{type:'pass', booster: 供应[0]}`（不能续用同款，
+  见 engine pass.ts）免枚举；充能恒拒绝；setup/pending 取 legal[0]）。depth=3
+  （我的 3 个主行动）+ 根节点 0.8×最优+0.2×次优加权（brittle plan 对冲）。
+  实测 4p 11 局 **8 局破百、峰值 128**（对比纯启发式 ~5/20）——方向验证成功，
+  但 ~295s/局不可在线用。**提速方向**：叶估值/局面缓存（evaluateState 按
+  stableStringify(state) 备忘）、更严的根候选帽、预算按阶段自适应、对手占位
+  再简化。用 `GAIA_TUNE_V2='{"selfSearch":{"enabled":true}}'` 可开启复现。
+- 经验教训：深搜的主要成本不在叶评估而在**每节点的 enumerateActions+静态评分**，
+  任何"对手也要枚举"的设计都不可行；剪枝帽随层数衰减是必须的。
+
 ## 待办/已知缺口
 
-- 启发式 AI 强度有限（v1，bench 对 random ~80%）；LLM 决策链已实现但需 ANTHROPIC_API_KEY 才启用。
+- LLM 决策链已实现但需 ANTHROPIC_API_KEY 才启用（预筛仍走 v1 scoreAction）。
 - Solo Automa 未实现（项目不做单人）。
 - Moweyds 族板无高清图（用小图回退）；Twilight 船板图来自 BGG 开箱照（非官方渲染）。
 - Tinkering tiles 只有合影图（未裁单块，面板用文字标签）。

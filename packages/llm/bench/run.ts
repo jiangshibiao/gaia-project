@@ -13,12 +13,16 @@
  *                     先手/座位/种族偏差，对比必备。
  *   --concurrency K   局间并行（默认 4；局内行动天然串行。网关限流别调高）。
  *   --out dir         输出目录（默认 bench/out/run-<时间戳>，bench/out/ 已 gitignore）。
+ *   --factions mode   default=固定种族池（跨轮可比）| random=按种子从全集抽取
+ *                     （内战均分覆盖面更广，评估 AI 通用强度用）。
+ *   --no-lf           关闭 Lost Fleet 扩展（验证 base 变体差异用，默认开）。
  *
  * LLM 座位需要 ANTHROPIC_API_KEY（经 AnthropicClient，走 ANTHROPIC_BASE_URL
  * 网关）；纯插件对局不需要 key，免费秒级。
  * 汇总：各标签胜率（平局各记 0.5）、平均 VP、平均 VP 差、degraded 率、token。
  */
 import type { FactionId, PlayerIndex } from '@gaia/engine';
+import { createRng } from '@gaia/engine';
 import { AnthropicClient } from '../src/client.js';
 import type { DecidingAgent } from '../src/decision.js';
 import { createAgent } from '../src/agents/registry.js';
@@ -33,10 +37,14 @@ interface CliOptions {
   mirror: boolean;
   concurrency: number;
   outDir: string;
+  /** 种族池：default=固定池（跨轮可比）；random=按种子从全集抽取（内战均分覆盖更广）。 */
+  factions: 'default' | 'random';
+  /** Lost Fleet 扩展开关（默认开；--no-lf 关——验证变体差异用）。 */
+  lostFleet: boolean;
 }
 
 const DIFFICULTIES = new Set(['easy', 'normal', 'hard']);
-const PLUGIN_SPECS = new Set(['heuristic', 'random', 'first-legal']);
+const PLUGIN_SPECS = new Set(['heuristic', 'heuristic2', 'random', 'first-legal']);
 
 /** bench 默认种族池（固定便于跨轮可比；镜像换边消除种族偏差）。 */
 const DEFAULT_FACTIONS: Record<number, FactionId[]> = {
@@ -44,6 +52,35 @@ const DEFAULT_FACTIONS: Record<number, FactionId[]> = {
   3: ['terrans', 'xenos', 'geodens'],
   4: ['terrans', 'xenos', 'geodens', 'itars'],
 };
+
+/** 环境变量可覆盖固定池（逗号分隔，须与人数一致）——强势池/指定组合测试用。 */
+function defaultFactions(playerCount: number): FactionId[] {
+  const raw = process.env['GAIA_BENCH_FACTIONS'];
+  if (raw !== undefined && raw !== '') {
+    const list = raw.split(',') as FactionId[];
+    if (list.length !== playerCount) {
+      throw new Error(`GAIA_BENCH_FACTIONS 须 ${playerCount} 个族，收到 ${list.length}`);
+    }
+    return list;
+  }
+  const pool = DEFAULT_FACTIONS[playerCount];
+  if (pool === undefined) throw new Error(`不支持的人数: ${playerCount}`);
+  return pool;
+}
+
+const BASE_FACTION_POOL: FactionId[] = [
+  'terrans', 'lantids', 'xenos', 'gleens', 'taklons', 'ambas', 'hadsch-hallas',
+  'ivits', 'geodens', 'baltaks', 'firaks', 'bescods', 'nevlas', 'itars',
+];
+const LF_FACTION_POOL: FactionId[] = [
+  ...BASE_FACTION_POOL, 'tinkeroids', 'darkanians', 'moweyds', 'space-giants',
+];
+
+/** 按种子从种族全集无重复抽取 playerCount 个（random 模式）。 */
+function randomFactions(seed: number, playerCount: number, lostFleet: boolean): FactionId[] {
+  const pool = lostFleet ? LF_FACTION_POOL : BASE_FACTION_POOL;
+  return createRng(seed * 7919 + 17).shuffle(pool).slice(0, playerCount);
+}
 
 function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
@@ -53,6 +90,8 @@ function parseArgs(argv: string[]): CliOptions {
     mirror: true,
     concurrency: 4,
     outDir: `bench/out/run-${new Date().toISOString().replace(/[:.]/g, '-')}`,
+    factions: 'default',
+    lostFleet: true,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -82,6 +121,15 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case '--out':
         opts.outDir = take();
+        break;
+      case '--factions': {
+        const v = take();
+        if (v !== 'default' && v !== 'random') throw new Error(`--factions 只支持 default|random，收到 ${v}`);
+        opts.factions = v;
+        break;
+      }
+      case '--no-lf':
+        opts.lostFleet = false;
         break;
       case '--help':
         console.log('见本文件头注释。');
@@ -186,10 +234,7 @@ function summarize(records: GameRecord[], labels: string[]): void {
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   const playerCount = opts.agentSpecs.length;
-  const factions = DEFAULT_FACTIONS[playerCount];
-  if (factions === undefined) {
-    throw new Error(`不支持的人数: ${playerCount}`);
-  }
+  const fixedFactions = defaultFactions(playerCount);
   const { agents, labels } = makeAgents(opts.agentSpecs);
   const writer = new TraceWriter(opts.outDir);
 
@@ -219,7 +264,15 @@ async function main(): Promise<void> {
       );
       const seatLabels = task.order.map((seat) => labels[seat]!);
       const game = await driveGame(
-        { playerCount, seed: task.seed, factions, lostFleet: true },
+        {
+          playerCount,
+          seed: task.seed,
+          factions:
+            opts.factions === 'random'
+              ? randomFactions(task.seed, playerCount, opts.lostFleet)
+              : fixedFactions,
+          lostFleet: opts.lostFleet,
+        },
         seatAgents,
       );
       const record = gameRecord(game, seatLabels, task.mirrored, Date.now() - started);
