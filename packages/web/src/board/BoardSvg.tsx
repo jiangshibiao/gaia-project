@@ -602,6 +602,11 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                       y={HEX_SIZE * 0.42}
                       width={HEX_SIZE * 0.42}
                       height={HEX_SIZE * 0.42}
+                      style={(() => {
+                        const c = FACTIONS[state.players[hex.additionalMine]?.faction ?? 'terrans'].color;
+                        const f = BUILDING_COLOR_FILTER[c];
+                        return f !== undefined ? { filter: f } : undefined;
+                      })()}
                     />
                   </g>
                 ) : null}
@@ -628,6 +633,11 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                       y={-HEX_SIZE * 0.42}
                       width={HEX_SIZE * 0.84}
                       height={HEX_SIZE * 0.84}
+                      style={(() => {
+                        const c = FACTIONS[state.players[hex.gaiaformerOf ?? projectOwner ?? 0]?.faction ?? 'terrans'].color;
+                        const f = BUILDING_COLOR_FILTER[c];
+                        return f !== undefined ? { filter: f } : undefined;
+                      })()}
                     />
                   </g>
                 ) : null}

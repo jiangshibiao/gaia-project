@@ -58,8 +58,8 @@ const LF_RENDER_ASPECT = 2000 / 1267;
 /** LF BGG 开箱正面照宽高比（2870×1851）。 */
 const LF_PHOTO_ASPECT = 2870 / 1851;
 
-/** moweyds 官方渲染图宽高比（wellplayed.ch，990×641）。 */
-const MOWEYDS_RENDER_ASPECT = 990 / 641;
+/** moweyds 官方渲染图宽高比（wellplayed.ch，裁白边后 980×628）。 */
+const MOWEYDS_RENDER_ASPECT = 980 / 628;
 
 /** 模板（Terrans 标定；除 bescods 外 13 块基础族板与 LF 渲染板同布局）。 */
 const TEMPLATE = {

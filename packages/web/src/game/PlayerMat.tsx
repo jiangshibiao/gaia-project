@@ -210,23 +210,6 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
         </div>
       ) : null}
 
-      {p.techTiles.length > 0 || p.advTechTiles.length > 0 ? (
-        <div className="mat-row mat-tech">
-          {p.techTiles.map((t) => (
-            <img key={t} className="tile-img sm" src={techTileImage(t)} alt={techTileName(t)} title={techTileName(t)} />
-          ))}
-          {p.advTechTiles.map((t) => (
-            <img
-              key={t.id}
-              className="tile-img sm adv"
-              src={advTechTileImage(t.id)}
-              alt={advTechTileName(t.id)}
-              title={`${advTechTileName(t.id)}（覆盖 ${techTileName(t.covers)}）`}
-            />
-          ))}
-        </div>
-      ) : null}
-
       {p.federationTokens.length > 0 ? (
         <div className="mat-row mat-feds" data-testid={`mat-feds-${playerIdx}`}>
           {p.federationTokens.map((f, i) => (
