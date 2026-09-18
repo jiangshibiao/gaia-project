@@ -2397,3 +2397,73 @@ select {
 .rail-r-status .conn.connecting {
   color: #d08080;
 }
+
+/* ---- 探索板（Lost Fleet 各族专属飞船面板，占位自绘版） ---- */
+.exploration-board {
+  flex: none;
+  width: 168px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1.5px solid;
+  border-radius: 8px;
+  background: rgba(10, 16, 30, 0.82);
+}
+.eb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.eb-portrait {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  object-fit: cover;
+  flex: none;
+}
+.eb-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.eb-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+.eb-cost {
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+.eb-adjust {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.eb-shuttles {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.eb-shuttle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.eb-shuttle img {
+  width: 26px;
+  height: 26px;
+}
+.eb-shuttle-ship {
+  font-size: 9px;
+  color: var(--ink-dim);
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
