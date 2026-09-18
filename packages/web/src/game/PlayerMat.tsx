@@ -242,10 +242,11 @@ export function TechBoosterStrip({ state, playerIdx }: { state: FilteredState; p
   const covered = new Set(p.advTechTiles.map((t) => t.covers));
   const uncoveredTech = p.techTiles.filter((t) => !covered.has(t));
   if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.booster === null && p.federationTokens.length === 0) return null;
-  /** 按获得时间混排（acquisitions 为空时回退：科技→高级→联邦的分组序）。 */
+  /** 按获得时间混排（acquisitions 为空/缺失时回退：科技→高级→联邦的分组序）。 */
+  const acqs = p.acquisitions ?? [];
   const items =
-    p.acquisitions.length > 0
-      ? p.acquisitions
+    acqs.length > 0
+      ? acqs
       : ([
           ...uncoveredTech.map((id) => ({ kind: 'tech' as const, id })),
           ...p.advTechTiles.map((t) => ({ kind: 'adv' as const, id: t.id })),
