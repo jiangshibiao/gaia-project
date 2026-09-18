@@ -1,0 +1,87 @@
+/**
+ * 左栏（v7 两块布局）：
+ * - 上块 = 我自己的版图（PlayerMat 放大）+ 下方科技板/推进片实图小横条
+ *   （TechBoosterStrip，与详情弹窗同类展示共享逻辑）；
+ * - 下块 = 其他玩家版图：>1 个对手时顶部一条 TAB 细条（座位色小方块 + 昵称，
+ *   当前行动者带指示点），点击切换下方 PlayerMat；默认选中第一个对手；
+ *   2 人局唯一对手不渲染 TAB 直接显示。
+ * 当前行动者高亮、详情弹窗入口、拖拽建矿（仅自己面板且轮到自己）保持不变。
+ */
+import { useState } from 'react';
+import type { ReactElement } from 'react';
+import type { BuildingSupply, PlayerIndex } from '@gaia/engine';
+import type { FilteredState } from '@gaia/protocol';
+import { playerColor } from './display';
+import { PlayerMat, TechBoosterStrip } from './PlayerMat';
+
+export interface LeftRailProps {
+  state: FilteredState;
+  seat: PlayerIndex;
+  nicknames: readonly (string | undefined)[];
+  /** 当前应行动玩家（actorOf 裁决，含 pending/setup）；null = 对局结束等。 */
+  actor: PlayerIndex | null;
+  thinkingSeats: readonly PlayerIndex[];
+  onShowDetail: (player: PlayerIndex) => void;
+  /** 拖拽建矿源（仅自己面板且轮到自己时由 GameScreen 传入）。 */
+  onBuildingDragStart?: ((b: keyof BuildingSupply, e: React.PointerEvent<HTMLImageElement>) => void) | undefined;
+}
+
+export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowDetail, onBuildingDragStart }: LeftRailProps): ReactElement {
+  const opponents = state.players.map((_, i) => i).filter((i) => i !== seat);
+  // null = 未手动选择 → 默认第一个对手；座位数/座位变化导致选中失效时同样回退
+  const [oppTab, setOppTab] = useState<PlayerIndex | null>(null);
+  const selected = oppTab !== null && opponents.includes(oppTab) ? oppTab : opponents[0];
+
+  return (
+    <aside className="rail-l" data-testid="rail-l">
+      {/* 上块：我的版图 + 科技/推进小横条 */}
+      <div className="rail-block" data-testid="rail-mine">
+        <PlayerMat
+          state={state}
+          playerIdx={seat}
+          nickname={nicknames[seat]}
+          isMe
+          thinking={thinkingSeats.includes(seat)}
+          active={actor === seat}
+          onShowDetail={onShowDetail}
+          onBuildingDragStart={actor === seat ? onBuildingDragStart : undefined}
+        />
+        <TechBoosterStrip state={state} playerIdx={seat} />
+      </div>
+
+      {/* 下块：对手版图（TAB 切换；单对手免 TAB） */}
+      {selected !== undefined ? (
+        <div className="rail-block" data-testid="rail-opponents">
+          {opponents.length > 1 ? (
+            <div className="opp-tabs" data-testid="opp-tabs" role="tablist">
+              {opponents.map((i) => (
+                <button
+                  key={i}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected === i}
+                  className={`opp-tab${selected === i ? ' selected' : ''}`}
+                  data-testid={`opp-tab-${i}`}
+                  onClick={() => setOppTab(i)}
+                >
+                  <span className="faction-chip" style={{ background: playerColor(state, i) }} aria-hidden="true" />
+                  <span className="opp-tab-name">{nicknames[i] ?? `玩家 ${i + 1}`}</span>
+                  {actor === i ? <span className="actor-dot" data-testid={`opp-tab-actor-${i}`} title="当前行动者" /> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <PlayerMat
+            state={state}
+            playerIdx={selected}
+            nickname={nicknames[selected]}
+            thinking={thinkingSeats.includes(selected)}
+            active={actor === selected}
+            onShowDetail={onShowDetail}
+          />
+          <TechBoosterStrip state={state} playerIdx={selected} />
+        </div>
+      ) : null}
+    </aside>
+  );
+}

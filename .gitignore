@@ -1,0 +1,35 @@
+node_modules/
+dist/
+*.local
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+.DS_Store
+coverage/
+
+# 规则调研参考资料（官方规则书 PDF 为版权素材、gaia-engine 为第三方源码，
+# 仅供本地开发参照，不入库）
+reference/
+.venv/
+
+# 官方游戏素材（版权属出版方）：不进 git，本地用 `npm run fetch-assets -w @gaia/web`
+# 从公开来源重建（个人非商用，见 packages/web/public/assets/README.md）
+packages/web/public/assets/*
+!packages/web/public/assets/README.md
+
+# bench 跑批输出（临时 trace 日志，不入库）
+packages/llm/bench/out/
+
+# tsc 构建产物（vite-node/vitest 直接跑 TS 源码，编译输出不入库；
+# 注意:不得让陈旧 .js 被提交——CI 无产物环境下 vitest 会优先加载它们导致解析失败）
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/test/**/*.js
+packages/*/test/**/*.d.ts
+packages/*/bench/**/*.js
+packages/*/bench/**/*.d.ts
+*.tsbuildinfo

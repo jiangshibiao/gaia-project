@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>盖亚计划 · 宽屏布局草图 v5（实图）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #0b0f1a;
+    color: #cfe3ff;
+    font-family: -apple-system, "PingFang SC", sans-serif;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    --top-h: 4.5vh;
+    --mat-w: min(16vw, calc((100vh - var(--top-h) - 4vh) / 4 / 0.727));
+    --rail-r-w: min(27vw, calc((100vh - var(--top-h) - 4vh) / 1.6));
+  }
+  .topbar {
+    height: var(--top-h); flex: none;
+    display: flex; align-items: center; gap: 0.8vw;
+    padding: 0 1vw;
+    background: #111a2e; border-bottom: 1px solid #2a3a5f;
+    font-size: min(1.8vh, 1vw);
+  }
+  .topbar .dim { color: #7f95c0; font-size: min(1.5vh, 0.9vw); }
+  .topbar .spacer { flex: 1; }
+  .topbar .act {
+    height: 3.2vh; padding: 0 0.9vw;
+    background: #1c2a47; border: 1px solid #2a3a5f; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: min(1.6vh, 0.85vw); white-space: nowrap;
+  }
+  .topbar .act.primary { background: #2a4a7f; }
+  .topbar .act.leave { background: #4a2a2f; }
+  .main { flex: 1; display: flex; min-height: 0; }
+  .rail-l {
+    width: calc(var(--mat-w) + 1.2vh); flex: none;
+    border-right: 1px solid #2a3a5f;
+    padding: 0.6vh;
+    display: flex; flex-direction: column; gap: 0.6vh;
+  }
+  .mat {
+    border: 1px solid #2a3a5f; border-radius: 8px;
+    padding: 4px; background: #101828;
+    display: flex; flex-direction: column;
+  }
+  .mat .board { width: 100%; aspect-ratio: 1.57; background-size: cover; background-position: center; border-radius: 4px; }
+  .mat .res {
+    height: calc(var(--mat-w) * 0.09); margin-top: 4px;
+    background: #131c30; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: #8fb0e0; font-size: min(1.4vh, 0.85vw);
+  }
+  .center { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0.6vh; gap: 0.6vh; }
+  .map {
+    flex: 1; min-height: 0;
+    border: 1px solid #2a3a5f; border-radius: 8px;
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+    background-color: #05070d;
+  }
+  .center-bottom {
+    flex: none;
+    display: flex; gap: 0.6vh; align-items: flex-start;
+  }
+  .fleet {
+    width: 60%; flex: none;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.6vh;
+  }
+  .ship {
+    aspect-ratio: 3.1;
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+    border: 1px solid #2a3a5f; border-radius: 8px;
+    position: relative;
+  }
+  .ship span {
+    position: absolute; top: 2px; left: 6px;
+    font-size: min(1.3vh, 0.8vw); color: #cfe3ff; text-shadow: 0 0 4px #000;
+  }
+  .boosters {
+    flex: 1; min-width: 0;
+    border: 1px solid #2a3a5f; border-radius: 8px;
+    padding: 0.6vh;
+    display: flex; flex-direction: column; gap: 0.6vh;
+  }
+  .boosters .label { color: #8fb0e0; font-size: min(1.3vh, 0.8vw); text-align: center; }
+  .boosters .row { display: flex; gap: 0.6vh; flex: 1; min-height: 0; }
+  .boosters .tile {
+    flex: 1; min-width: 0;
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+    border: 1px solid #2a3a5f; border-radius: 4px;
+  }
+  .rail-r {
+    width: var(--rail-r-w); flex: none;
+    border-left: 1px solid #2a3a5f;
+    padding: 0.6vh;
+    display: flex; flex-direction: column; gap: 0.6vh;
+  }
+  .research {
+    width: 100%; flex: none;
+    aspect-ratio: 0.932;
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+    border: 1px solid #2a3a5f; border-radius: 8px;
+  }
+  .scoreboard {
+    flex: 1; min-height: 0;
+    border: 1px solid #2a3a5f; border-radius: 8px;
+    padding: 0.6vh;
+    display: flex; flex-direction: column; gap: 0.6vh;
+    background: #101828;
+  }
+  /* 圆形回合弧（仿实体计分板）：中心星球 + 6 格绕半圆 */
+  .round-arc {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 2.1;
+    flex: none;
+  }
+  .round-arc .planet {
+    position: absolute; left: 50%; bottom: 6%;
+    width: 22%; aspect-ratio: 1;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #4a9a4a, #1a4a2a);
+    display: flex; align-items: center; justify-content: center;
+    font-size: min(1.6vh, 0.9vw); color: #eaffea; text-shadow: 0 0 4px #000;
+  }
+  .round-arc .rnd {
+    position: absolute;
+    width: 15%;
+    aspect-ratio: 0.72;
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+    border: 1px solid #2a3a5f; border-radius: 4px;
+    transform: translate(-50%, -50%);
+  }
+  .round-arc .rnd.cur { outline: 3px solid #ffd700; box-shadow: 0 0 10px #ffd700; }
+  .round-arc .rnd.past { opacity: 0.35; }
+  .round-arc .num {
+    position: absolute;
+    width: 5.5%; aspect-ratio: 1;
+    border-radius: 50%;
+    background: #1c2a47; border: 1px solid #4a6ea9;
+    display: flex; align-items: center; justify-content: center;
+    font-size: min(1.4vh, 0.85vw);
+    transform: translate(-50%, -50%);
+  }
+  .finals {
+    flex: 1; min-height: 0;
+    display: flex; gap: 0.6vh;
+  }
+  .final {
+    flex: 1; min-width: 0;
+    border: 1px solid #2a3a5f; border-radius: 6px;
+    display: flex; flex-direction: column;
+    padding: 4px;
+  }
+  .final .img {
+    flex: 1; min-height: 0;
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+  }
+  .final .prog {
+    flex: none;
+    font-size: min(1.3vh, 0.8vw); color: #8fb0e0; text-align: center;
+  }
+  .final .prog b { color: #ffd700; }
+  .misc {
+    flex: none;
+    display: flex; gap: 0.6vh; align-items: center; justify-content: center;
+    color: #8fb0e0; font-size: min(1.4vh, 0.85vw);
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <b>盖亚计划</b>
+    <span class="dim">第 3 / 6 轮　本轮：建矿 +2vp　终局：联邦建筑 / 卫星　先手：玩家1　轮到：玩家2（塔克龙）</span>
+    <span class="spacer"></span>
+    <span class="act primary">建矿</span>
+    <span class="act">盖亚计划</span>
+    <span class="act">升级建筑</span>
+    <span class="act">研究</span>
+    <span class="act">组建联邦</span>
+    <span class="act">探索飞船</span>
+    <span class="act">魔力行动</span>
+    <span class="act">特殊行动</span>
+    <span class="act">Pass</span>
+    <span class="act leave">离开房间</span>
+  </div>
+  <div class="main">
+    <div class="rail-l">
+      <div class="mat"><div class="board" style="background-image:url('/assets/factions/hi/Terrans.jpg')"></div><div class="res">矿 4 · 币 15 · 知 3 · QIC 1 · VP 10</div></div>
+      <div class="mat"><div class="board" style="background-image:url('/assets/factions/hi/Taklons.jpg')"></div><div class="res">资源条（当前行动者高亮）</div></div>
+      <div class="mat"><div class="board" style="background-image:url('/assets/factions/hi/Xenos.jpg')"></div><div class="res">资源条</div></div>
+      <div class="mat"><div class="board" style="background-image:url('/assets/factions/hi/Itars.jpg')"></div><div class="res">资源条</div></div>
+    </div>
+    <div class="center">
+      <div class="map" style="background-image:url('/mock-board.png')"></div>
+      <div class="center-bottom">
+        <div class="fleet">
+          <div class="ship" style="background-image:url('/assets/lf/ships/twilight_board_bgg9503665.png')"><span>暮光号</span></div>
+          <div class="ship" style="background-image:url('/assets/lf/ships/tf-mars_board_bgg9503665.png')"><span>火星号</span></div>
+          <div class="ship" style="background-image:url('/assets/lf/ships/eclipse_board_feuerland.jpg')"><span>日蚀号</span></div>
+          <div class="ship" style="background-image:url('/assets/lf/ships/rebellion_board_feuerland.jpg')"><span>叛乱号</span></div>
+        </div>
+        <div class="boosters">
+          <div class="label">助推器池</div>
+          <div class="row">
+            <div class="tile" style="background-image:url('/assets/tiles/boosters/BOOknw.png')"></div>
+            <div class="tile" style="background-image:url('/assets/tiles/boosters/BOOpwt.png')"></div>
+            <div class="tile" style="background-image:url('/assets/tiles/boosters/BOOqic.png')"></div>
+            <div class="tile" style="background-image:url('/assets/tiles/boosters/BOOter.png')"></div>
+            <div class="tile" style="background-image:url('/assets/tiles/boosters/BOOnav.png')"></div>
+            <div class="tile" style="background-image:url('/assets/tiles/boosters/BOOmin.png')"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="rail-r">
+      <div class="research" style="background-image:url('/assets/boards/ResearchBoard.jpg')"></div>
+      <div class="scoreboard">
+        <div class="round-arc" id="arc">
+          <div class="planet">回合弧</div>
+        </div>
+        <div class="finals">
+          <div class="final">
+            <div class="img" style="background-image:url('/assets/tiles/final/FINfed.png')"></div>
+            <div class="prog">联邦建筑：我 <b>11</b> / 泽 9 / 塔 7 / 伊 4</div>
+          </div>
+          <div class="final">
+            <div class="img" style="background-image:url('/assets/tiles/final/FINsat.png')"></div>
+            <div class="prog">卫星：泽 <b>6</b> / 我 5 / 伊 3 / 塔 2</div>
+          </div>
+        </div>
+        <div class="misc">回合 3/6 ｜ 先手：玩家1</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    // 半圆排布 6 张回合计分 + 数字圆
+    const arc = document.getElementById('arc');
+    const tiles = ['RNDter', 'RNDstp', 'RNDmin', 'RNDfed', 'RNDtrs4', 'RNDpia'];
+    tiles.forEach((t, i) => {
+      const ang = Math.PI * (1 - i / 5); // 180°→0° 半圆
+      const x = 50 + 44 * Math.cos(ang);
+      const y = 96 - 78 * Math.sin(ang) * 0.9;
+      const d = document.createElement('div');
+      d.className = 'rnd' + (i === 2 ? ' cur' : i < 2 ? ' past' : '');
+      d.style.left = x + '%';
+      d.style.top = y + '%';
+      d.style.backgroundImage = `url('/assets/tiles/scoring/${t}.png')`;
+      arc.appendChild(d);
+      const n = document.createElement('div');
+      n.className = 'num';
+      n.textContent = i + 1;
+      const nx = 50 + 30 * Math.cos(ang);
+      const ny = 96 - 62 * Math.sin(ang) * 0.9;
+      n.style.left = nx + '%';
+      n.style.top = ny + '%';
+      arc.appendChild(n);
+    });
+  </script>
+</body>
+</html>
