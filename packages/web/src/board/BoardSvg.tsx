@@ -564,7 +564,11 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                     data-sector={hex.sector}
                     points={hexPoints(0, 0, HEX_SIZE - 1)}
                   />
-                ) : null}
+                ) : (
+                  // 原画覆盖格：扇区图自带的网格线在地图外缘没有闭合描边，
+                  // 补一个只描边的六边形，让边缘格也有蓝色外框。
+                  <polygon className="hex-edge" points={hexPoints(0, 0, HEX_SIZE - 1)} />
+                )}
                 {hex.planet !== 'empty' ? (
                   <g className="hex-planet" data-planet={hex.planet}>
                     <PlanetOverlay hex={hex} artPlanet={placements.artPlanet.get(key)} hasArt={hasArt} />
