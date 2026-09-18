@@ -35,7 +35,6 @@ import type { BoardSvgHandle } from '../board/BoardSvg';
 import { ActionBar } from './ActionBar';
 import { AdvExtension } from './AdvExtension';
 import { BoostersStrip } from './BoostersStrip';
-import { ExplorationBoard } from './ExplorationBoard';
 import { FinalsProgress } from './FinalsProgress';
 import { FleetPanel } from './FleetPanel';
 import { LeftRail } from './LeftRail';
@@ -317,7 +316,6 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
           </div>
 
           <div className="center-bottom">
-            <ExplorationBoard state={state} seat={seat} />
             <BoostersStrip
               state={state}
               activeField={question?.field.key ?? null}
