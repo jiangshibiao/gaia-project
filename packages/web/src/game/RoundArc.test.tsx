@@ -31,11 +31,11 @@ describe('computeArcLayout 几何（圆环排布，按容器实测尺寸）', ()
       const n = 6;
       const L = computeArcLayout(w, h, n);
       const maxSin = Math.max(...Array.from({ length: n }, (_, i) => Math.sin(Math.PI * (1 - i / (n - 1)))));
-      // 环心 x = 容器中央；最低点（端点图下缘 / 星球底边，取较大者）恰好 = 容器底边
+      // 环心 x = 容器中央；最低点（端点图下缘 / 星球底边）不越容器底（整体上移 6%）
       expect(L.cx).toBeCloseTo(w / 2, 6);
-      expect(Math.max(L.cy + L.tileHeight / 2, L.cy + L.planetD / 2)).toBeCloseTo(h, 6);
       expect(L.cy + L.tileHeight / 2).toBeLessThanOrEqual(h + 1e-6);
       expect(L.cy + L.planetD / 2).toBeLessThanOrEqual(h + 1e-6);
+      expect(Math.max(L.cy + L.tileHeight / 2, L.cy + L.planetD / 2)).toBeCloseTo(h * 0.94, 6);
       // 端点图不溢出左右
       expect(L.cx - L.radius - L.tileWidth / 2).toBeGreaterThanOrEqual(-1e-6);
       expect(L.cx + L.radius + L.tileWidth / 2).toBeLessThanOrEqual(w + 1e-6);
@@ -121,10 +121,10 @@ describe('<RoundArc> 回合弧', () => {
       // 图下缘不越容器底（最低点为图/星球较大者贴底，图可能略浮）
       expect(centerY + L.tileHeight / 2).toBeLessThanOrEqual(100 + 1e-6);
     }
-    // 中央装饰星球：中心 = 环心（底部中央）；最低点贴容器底边
+    // 中央装饰星球：中心 = 环心（底部中央）；最低点（图/星球较大者）上移后 = 容器底的 94%
     const planet = container.querySelector<HTMLElement>('.round-arc-planet');
     expect(parseFloat(planet?.style.top ?? '')).toBeCloseTo(L.cy, 1);
-    expect(Math.max(L.cy + L.tileHeight / 2, L.cy + L.planetD / 2)).toBeCloseTo(100, 1);
+    expect(Math.max(L.cy + L.tileHeight / 2, L.cy + L.planetD / 2)).toBeCloseTo(100 * 0.94, 1);
     // 最高图（6 张时第 3/4 张，sin=sin108°）顶边不越容器顶
     const mid = getByTestId('round-arc-tile-3');
     const midTop = parseFloat(mid.style.top) - L.tileHeight / 2;

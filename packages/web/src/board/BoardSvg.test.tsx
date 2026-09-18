@@ -12,7 +12,7 @@ import { filterStateFor } from '@gaia/protocol';
 import { applyAction, newGame, parseHexKey } from '@gaia/engine';
 import type { HexKey } from '@gaia/engine';
 import { BoardSvg, boardViewBox, hexToPixel } from './BoardSvg';
-import { bestHorizontalRotation, parseViewBox, rotatedViewBox } from './viewport';
+import { bestHorizontalRotation, parseViewBox, rotatedPointsViewBox } from './viewport';
 
 function fixture() {
   const game = newGame({
@@ -184,9 +184,9 @@ describe('<BoardSvg> 整体旋转', () => {
     const { points, cx, cy, base } = mapGeometry(state);
     const deg = bestHorizontalRotation(points, cx, cy);
     expect(rotateDeg(container)).toBeCloseTo(deg, 5);
-    // 自适应 viewBox = 旋转后的外接矩形（宽 ≥ 高）
+    // 自适应 viewBox = 旋转后 hex 中心的紧致包围盒（宽 ≥ 高）
     const vb = parseViewBox(container.querySelector('svg.board-svg')?.getAttribute('viewBox') ?? '');
-    const expectFit = rotatedViewBox(base, deg);
+    const expectFit = rotatedPointsViewBox(points, cx, cy, deg, 30 * 0.8);
     expect(vb.w).toBeCloseTo(expectFit.w, 1);
     expect(vb.h).toBeCloseTo(expectFit.h, 1);
     expect(vb.w).toBeGreaterThanOrEqual(vb.h);

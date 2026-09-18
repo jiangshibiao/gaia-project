@@ -65,7 +65,7 @@ import {
   SECTOR_IMAGE_HEIGHT,
   SECTOR_IMAGE_WIDTH,
 } from './sector-calibration';
-import { bestHorizontalRotation, clampZoom, formatViewBox, panViewBox, parseViewBox, rotatedViewBox, zoomViewBox } from './viewport';
+import { bestHorizontalRotation, clampZoom, formatViewBox, panViewBox, parseViewBox, rotatedPointsViewBox, zoomViewBox } from './viewport';
 import type { ViewBox } from './viewport';
 
 /** 单 hex 外接圆半径（SVG 单位）。 */
@@ -103,7 +103,7 @@ export function boardViewBox(map: Record<HexKey, HexState>): string {
     maxY = Math.max(maxY, y);
   }
   if (!Number.isFinite(minX)) return '0 0 100 100';
-  const pad = HEX_SIZE * 1.6;
+  const pad = HEX_SIZE * 0.8;
   return `${(minX - pad).toFixed(1)} ${(minY - pad).toFixed(1)} ${(maxX - minX + pad * 2).toFixed(1)} ${(maxY - minY + pad * 2).toFixed(1)}`;
 }
 
@@ -305,8 +305,11 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
   const rotRef = useRef({ deg: 0, cx: 0, cy: 0 });
   rotRef.current = { deg, cx: rotCx, cy: rotCy };
 
-  /** 自适应 viewBox：旋转后地图包围盒的轴对齐外接矩形。 */
-  const rotatedFit = useMemo(() => formatViewBox(rotatedViewBox(baseFit, deg)), [baseFit, deg]);
+  /** 自适应 viewBox：旋转后 hex 中心的紧致包围盒（不再用旋转矩形的外接——它会无谓放大包围盒）。 */
+  const rotatedFit = useMemo(
+    () => formatViewBox(rotatedPointsViewBox(mapPoints, rotCx, rotCy, deg, HEX_SIZE * 0.8)),
+    [mapPoints, rotCx, rotCy, deg],
+  );
   const fitRef = useRef(rotatedFit);
   fitRef.current = rotatedFit;
   const viewBox = view !== null ? formatViewBox(view) : rotatedFit;
@@ -588,12 +591,13 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                 ) : null}
                 {hex.additionalMine !== undefined ? (
                   <g className="hex-additional-mine" data-player={hex.additionalMine}>
+                    {/* 附加矿（Lantids 在对手星球上的矿）：移到角落与主建筑错开 */}
                     <image
                       href={buildingImageTrimmed('mine', FACTIONS[state.players[hex.additionalMine]?.faction ?? 'terrans'].color)}
-                      x={HEX_SIZE * 0.22}
-                      y={HEX_SIZE * 0.22}
-                      width={HEX_SIZE * 0.5}
-                      height={HEX_SIZE * 0.5}
+                      x={HEX_SIZE * 0.42}
+                      y={HEX_SIZE * 0.42}
+                      width={HEX_SIZE * 0.42}
+                      height={HEX_SIZE * 0.42}
                     />
                   </g>
                 ) : null}
@@ -613,14 +617,13 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                   <g
                     className={`hex-gaiaformer${hex.gaiaformerOf === undefined ? ' in-progress' : ''}`}
                     data-player={hex.gaiaformerOf ?? projectOwner}
-                    transform={`translate(${HEX_SIZE * 0.48},${HEX_SIZE * 0.42})`}
                   >
                     <image
                       href={buildingImageTrimmed('gf', FACTIONS[state.players[hex.gaiaformerOf ?? projectOwner ?? 0]?.faction ?? 'terrans'].color)}
-                      x={-HEX_SIZE * 0.3}
-                      y={-HEX_SIZE * 0.3}
-                      width={HEX_SIZE * 0.6}
-                      height={HEX_SIZE * 0.6}
+                      x={-HEX_SIZE * 0.42}
+                      y={-HEX_SIZE * 0.42}
+                      width={HEX_SIZE * 0.84}
+                      height={HEX_SIZE * 0.84}
                     />
                   </g>
                 ) : null}

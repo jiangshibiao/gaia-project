@@ -58,17 +58,17 @@ export function computeArcLayout(width: number, height: number, count = 6): ArcL
   // 收紧：R = 星球半径 + 图高/2 + 0.02R（图环抱星球、几乎贴上；星球直径取容器宽 22%）
   const planetTargetD = width * 0.22;
   let radius = planetTargetD / 2 / (1 - tileHFrac / 2 - 0.02);
-  // 容器过矮：最高图顶边不越容器顶（cy = h − max(tileH, planetD)/2，planetD = 2(R − tileH/2) ≥ tileH
-  //   时 cy = h − planetD/2 → top = cy − R·maxSin − tileH/2 = h − R(1 + maxSin) ≥ 0）
-  const rHeight = maxSin > 0 ? height / (1 + maxSin) : Number.POSITIVE_INFINITY;
+  // 容器过矮：最高图顶边不越容器顶（cy = h − max(tileH, planetD)/2 − 0.06h，
+  //   top = cy − R·maxSin − tileH/2 ≥ 0 → R ≤ 0.94h/(1 + maxSin)）
+  const rHeight = maxSin > 0 ? (height * 0.94) / (1 + maxSin) : Number.POSITIVE_INFINITY;
   radius = Math.max(0, Math.min(radius, rHeight));
   const tileWidth = radius * 0.6;
   const tileHeight = tileWidth / ARC_TILE_ASPECT;
   // 回缩情形下星球同比例缩小（保持在环内侧）
   const planetD = Math.min(planetTargetD, 2 * (radius - tileHeight / 2));
   const cx = width / 2;
-  // 环心：最低点（端点图下缘 / 星球底边，取较大者）恰好贴容器底边
-  const cy = height - Math.max(tileHeight, planetD) / 2;
+  // 环心：最低点（端点图下缘 / 星球底边，取较大者）贴容器底边，整体上移 ~6% 容器高
+  const cy = height - Math.max(tileHeight, planetD) / 2 - height * 0.06;
   return {
     width,
     height,

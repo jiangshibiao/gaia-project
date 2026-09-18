@@ -63,6 +63,38 @@ export function rotatedViewBox(v: ViewBox, deg: number): ViewBox {
 }
 
 /**
+ * 旋转后 hex 中心点的紧致包围盒（替代旋转矩形的轴对齐外接——后者会把包围盒
+ * 无谓放大 (|cos|+|sin|) 倍，导致初始地图偏小）。
+ */
+export function rotatedPointsViewBox(
+  points: readonly { x: number; y: number }[],
+  cx: number,
+  cy: number,
+  deg: number,
+  pad: number,
+): ViewBox {
+  const rad = (deg * Math.PI) / 180;
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of points) {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const x = cx + dx * c - dy * s;
+    const y = cy + dx * s + dy * c;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 100, h: 100 };
+  return { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 };
+}
+
+/**
  * 任意角度最优水平取向：全图 hex 中心绕 (cx,cy) 旋转后包围盒宽度最大的角度。
  * 宽度函数周期 180°，扫 −90..90° 即覆盖全部取向（1° 粗扫 + 0.1° 细扫）；
  * 宽度并列时取 |角度| 最小者（避免无谓倾斜）。返回 CSS rotate 角度（y 向下，

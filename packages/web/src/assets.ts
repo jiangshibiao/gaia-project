@@ -116,7 +116,8 @@ const BUILDING_COLOR_FILE: Record<string, string> = {
 /** 近似色图需要的 hue-rotate 补偿（pink←red、turquoise←blue）。 */
 export const BUILDING_COLOR_FILTER: Record<string, string | undefined> = {
   pink: 'hue-rotate(-50deg) saturate(1.4)',
-  turquoise: 'hue-rotate(-35deg) saturate(1.2)',
+  // 青色与兰提达蓝要有明显区分：往青绿方向多转一些
+  turquoise: 'hue-rotate(-65deg) saturate(1.3) brightness(1.05)',
 };
 
 /** 建筑棋子图（sp 无棋子——用 markers/SpaceStation）。 */
