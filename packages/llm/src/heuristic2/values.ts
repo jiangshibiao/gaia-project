@@ -110,7 +110,28 @@ function rangeAtLevel(level: number): number {
   return range;
 }
 
-/** 联邦标记估值：vp + 即时资源 + LF 即时效果 + 绿面门票溢价。 */
+/** 高级片槽位 → 研究轨（与 engine tech.ts 的 TRACKS 同序；槽 6 为 LF 扩展条）。 */
+const ADV_SLOT_TRACKS: readonly ResearchTrack[] = ['terra', 'nav', 'int', 'gaia', 'eco', 'sci'];
+
+/**
+ * 首张绿面票（高级片入场券）的期望价值：当前接近开启（对应轨 L3+）的槽位里
+ * 最佳高级片估值 ×0.7（兑现概率——还要凑拿板行动/可覆盖片），末期按剩余
+ * 轮数打折（来不及兑现）。无接近槽位时给基准 6。
+ */
+function advTicketExpectation(ctx: EvalCtx): number {
+  let best = 0;
+  ctx.state.board.advTechTiles.forEach((tile, slot) => {
+    if (tile === null) return;
+    const track = ADV_SLOT_TRACKS[slot];
+    if (track === undefined) return; // 第 7 槽（扩展条）不按轨估
+    if (ctx.me.research[track] < 3) return;
+    best = Math.max(best, advTechTileValue(ctx, tile));
+  });
+  const base = best > 0 ? best * 0.7 : 6;
+  return base * Math.min(1, ctx.roundsLeft / 3 + 0.4);
+}
+
+/** 联邦标记估值：vp + 即时资源 + LF 即时效果 + 绿面门票价值（稀缺敏感）。 */
 export function federationTokenValue(ctx: EvalCtx, id: FederationTokenId): number {
   const def = FEDERATION_TOKENS[id];
   let v = def.vp + (def.other !== undefined ? gainValue(ctx, def.other) : 0);
@@ -128,11 +149,13 @@ export function federationTokenValue(ctx: EvalCtx, id: FederationTokenId): numbe
     case undefined:
       break;
   }
-  // 绿面标记是 L5/高级板的翻面门票：高级片价值 12-16 VP（社区共识），
-  // 门票溢价必须接近这个量级——早期/中期 +6，末期 +2（来不及兑现高级片）。
+  // 绿面标记 = L5/高级板的翻面门票：**手里没有其他未翻绿面票时**（首张票）
+  // 按高级片期望显著加价；已有票时只是备份，小幅加价。
   if (def.flippable) {
-    const held = ctx.me.federationTokens.some((t) => t.id === id && !t.flipped);
-    if (held !== true) v += ctx.phase === 'late' ? 2 : 6;
+    const hasTicket = ctx.me.federationTokens.some(
+      (t) => !t.flipped && FEDERATION_TOKENS[t.id].flippable === true,
+    );
+    v += hasTicket ? 1.5 : advTicketExpectation(ctx);
   }
   return v;
 }

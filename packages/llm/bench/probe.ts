@@ -73,6 +73,12 @@ async function main(): Promise<void> {
         const gpv = a.hex !== undefined ? ` 组pv=${groupPv(state, actor, a.hex, 1)}` : '';
         console.log(`  ${s.action.type}${a.hex !== undefined ? `@${a.hex}` : ''}${gpv} 分=${s.score.toFixed(1)}`);
       }
+      // 联邦候选单独打印（看被什么压过）。
+      const feds = scored.filter((x) => x.action.type === 'form-federation');
+      for (const f of feds.slice(0, 3)) {
+        const a = f.action as { hexes?: unknown[]; satellites?: unknown[]; token?: string };
+        console.log(`  [联邦候选] ${a.token} 组=${a.hexes?.length}hex 卫星=${a.satellites?.length} 分=${f.score.toFixed(1)}`);
+      }
       // 高级片候选单独打印（看被什么压过）。
       const advs = scoredActions(ctx, legal).filter(
         (s) => (s.action as { advTechTile?: unknown }).advTechTile !== undefined,

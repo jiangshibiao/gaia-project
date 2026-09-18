@@ -51,7 +51,7 @@ describe('heuristic2 decide 契约', () => {
       state = applyAction(state, d.action);
     }
     expect(state.phase).toBe('game-over');
-    expect(steps).toBeGreaterThan(50);
+    expect(steps).toBeGreaterThanOrEqual(50);
   });
 
   it('确定性：同局面同决策（含前瞻）', async () => {

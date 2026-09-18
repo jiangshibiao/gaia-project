@@ -45,6 +45,8 @@ export interface Cfg {
       chargeMult: number;
       /** 扩张类进程（新星球类型/新扇区/殖民计数）价值倍率。 */
       expansionMult: number;
+      /** 联邦凑组拉力倍率：前期强（先立簇再扩张），后期弱。 */
+      clusterMult: number;
     }
   >;
   research: {
@@ -233,11 +235,10 @@ export const BASE_CFG: Cfg = {
   },
   phase: {
     // R1-2：经济雪球期——收入全额、库存全额、leech 几乎无脑收（社区：R1-4 全收）。
-    early: { incomeMult: 1, stockMult: 1, chargeMult: 1.4, expansionMult: 1 },
-    // R3-4：收入盈亏平衡点附近，开始转向 VP。
-    mid: { incomeMult: 0.7, stockMult: 0.8, chargeMult: 1.1, expansionMult: 0.9 },
-    // R5-6：VP 冲刺——库存资源只剩兑换价值，leech 仅明确正收益时收。
-    late: { incomeMult: 0.6, stockMult: 0.35, chargeMult: 0.7, expansionMult: 0.7 },
+    // clusterMult 消融结论：早期 >1 过度聚簇伤扩张（2p −5 分），保持 1。
+    early: { incomeMult: 1, stockMult: 1, chargeMult: 1.4, expansionMult: 1, clusterMult: 1 },
+    mid: { incomeMult: 0.7, stockMult: 0.8, chargeMult: 1.1, expansionMult: 0.9, clusterMult: 1 },
+    late: { incomeMult: 0.6, stockMult: 0.35, chargeMult: 0.7, expansionMult: 0.7, clusterMult: 0.7 },
   },
   research: {
     // 全局改造步数预期（回本估算）：一局实际付费改造 ~5-8 步。
@@ -267,12 +268,12 @@ export const BASE_CFG: Cfg = {
     secondAcademyPenalty: 8,
   },
   federation: {
-    base: 8,
+    base: 10,
     perHex: 0.4,
     // 卫星 = 永久丢弃 1 power token（≈2）− 卫星终局进程：净成本约 1.5。
     satelliteCost: 1.5,
     satelliteProgress: 0.3,
-    thirdBonus: 4,
+    thirdBonus: 6,
   },
   boardAction: {
     buildMine: 7,
@@ -329,9 +330,7 @@ export const BASE_CFG: Cfg = {
     advTileMult: 0.5,
   },
   selfSearch: {
-    // 默认关：4p 实测 8/11 局破百（峰值 128）但 ~295s/局，在线对局不可接受。
-    // 留档待提速（叶估值缓存/更严剪枝/预算自适应）后用 GAIA_TUNE_V2 开启。
-    enabled: false,
+    enabled: true,
     depth: 3,
     nodeBudget: 4000,
     caps: [10, 8, 6, 4],

@@ -190,6 +190,71 @@ function fedGroupValue(pv: number, weight: number): number {
   return t * t * weight;
 }
 
+/**
+ * 连通分量贴建价值：pv≤7 按凸形增长（养到 7 = 零卫星联邦），**超过 7 贬值**
+ * ——理想形状：一个分量养到 7（联邦 #1），其余分量 3-4（两两合并成联邦
+ * #2/#3）；分量超过 7 还贴建 = 浪费电力密度，且大分量合并时一个联邦吃掉
+ * 所有建筑，毁掉其他潜在外援联邦。
+ */
+function fedComponentValue(pv: number, weight: number): number {
+  if (pv <= 7) return fedGroupValue(pv, weight);
+  return fedGroupValue(7, weight) - (pv - 7) * 2;
+}
+
+interface OwnComponents {
+  compOf: Map<HexKey, number>;
+  pvs: number[];
+}
+
+/**
+ * 己方建筑（未入联邦）的邻接连通分量（联邦形状的原子单位——引擎枚举按整个
+ * 分量合并，所以"贴大"和"合并"都会毁掉潜在外援联邦）。additionalMine 计 pv1。
+ */
+function ownComponents(state: GameState, seat: PlayerIndex): OwnComponents {
+  const ownSet = new Set<HexKey>();
+  for (const [key, hex] of Object.entries(state.map)) {
+    if (hex.federations.includes(seat)) continue;
+    if (hex.building?.player === seat || hex.additionalMine === seat) {
+      ownSet.add(key as HexKey);
+    }
+  }
+  const compOf = new Map<HexKey, number>();
+  const pvs: number[] = [];
+  for (const start of ownSet) {
+    if (compOf.has(start)) continue;
+    const id = pvs.length;
+    let pv = 0;
+    const queue: HexKey[] = [start];
+    compOf.set(start, id);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      const hex = state.map[cur]!;
+      pv +=
+        hex.additionalMine === seat && hex.building?.player !== seat
+          ? 1
+          : buildingPowerValue(state, seat, hex);
+      for (const nb of mapNeighbors(state.map, cur)) {
+        if (ownSet.has(nb) && !compOf.has(nb)) {
+          compOf.set(nb, id);
+          queue.push(nb);
+        }
+      }
+    }
+    pvs.push(pv);
+  }
+  return { compOf, pvs };
+}
+
+/** 与 hex 相邻的己有分量 id 集合（贴建/合并判定）。 */
+function touchingComponents(comps: OwnComponents, state: GameState, hexKey: HexKey): Set<number> {
+  const out = new Set<number>();
+  for (const nb of mapNeighbors(state.map, hexKey)) {
+    const c = comps.compOf.get(nb);
+    if (c !== undefined) out.add(c);
+  }
+  return out;
+}
+
 /** 与己方建筑群的最近距离（联邦潜力；无己方建筑时返回 null）。 */
 function ownClusterDistance(state: GameState, seat: PlayerIndex, hexKey: HexKey): number | null {
   const own = colonizedHexes(state.map, seat).filter((h) => h !== hexKey);
@@ -262,9 +327,23 @@ function scoreBuildMine(ctx: EvalCtx, hexKey: HexKey): number {
   if (t.newSector) s += cfg.newSector * expansion;
   if (t.gaiaformerRecover) s += cfg.gaiaformerRecover;
   if (t.asteroid) s -= cfg.asteroidPenalty;
-  // 联邦组潜力：2 格内己方建筑 pv 合计（含本矿 1）的凸形价值 + 近邻固定加成。
-  const groupPv = nearbyGroupPv(ctx, hexKey, 1);
-  s += fedGroupValue(groupPv, cfg.clusterPv) + (groupPv >= 2 ? cfg.clusterFlat : 0);
+  // 联邦凑组（连通分量感知）：贴单分量给凸形（超 8 惩罚贴大），合并多分量
+  // 重罚（毁掉多个潜在外援联邦），全新种子按 2 格桥接潜力半价。乘阶段倍率。
+  const clusterMult = ctx.cfg.phase[ctx.phase].clusterMult;
+  const comps = ownComponents(ctx.state, ctx.seat);
+  const touching = touchingComponents(comps, ctx.state, hexKey);
+  if (touching.size === 0) {
+    // 新种子：2 格内可桥接的己方 pv 给全额凸形——种子要落在能与既有小分量
+    // 卫星合并成联邦的位置，否则只会再多一个孤岛分量。
+    s += fedGroupValue(nearbyGroupPv(ctx, hexKey, 1), cfg.clusterPv) * clusterMult;
+  } else if (touching.size === 1) {
+    const after = comps.pvs[[...touching][0]!]! + 1;
+    s += fedComponentValue(after, cfg.clusterPv) * clusterMult;
+  } else {
+    let mergedPv = 1;
+    for (const c of touching) mergedPv += comps.pvs[c]!;
+    s -= mergedPv * 0.5 * clusterMult; // 合并分量罚（轻——有时不可避免）
+  }
   // 成长空间：2 格内可殖民空星球数——簇还能扩多大（避免死胡同簇）。
   let room = 0;
   for (const h of hexesWithin(ctx.state.map, hexKey, 2)) {
@@ -340,6 +419,15 @@ function scoreUpgrade(ctx: EvalCtx, action: Extract<Action, { type: 'upgrade' }>
   const pvGain = to === 'ts' ? 1 : to === 'lab' ? 1 : to === 'pi' ? 2 : 1;
   // 升级后的组 pv 密度（含增量）的凸形价值——TS/PI/AC 是凑联邦的功率来源。
   s += fedGroupValue(nearbyGroupPv(ctx, hexKey, pvGain), ctx.cfg.upgrade.pvGain);
+  // 贴大惩罚：所在分量超 7 pv 后，继续堆 pv 是在浪费潜在外援联邦。
+  {
+    const comps = ownComponents(ctx.state, ctx.seat);
+    const compId = comps.compOf.get(hexKey);
+    if (compId !== undefined) {
+      const after = comps.pvs[compId]! + pvGain;
+      if (after > 7) s -= (after - 7) * 2 * ctx.cfg.phase[ctx.phase].clusterMult;
+    }
+  }
   if (to === 'ts') s += ctx.cfg.upgrade.tsBonus; // TS 是经济骨干
   if (to === 'pi') s += ctx.cfg.upgrade.piUnlock;
   if (to === 'ac1' || to === 'ac2') {
