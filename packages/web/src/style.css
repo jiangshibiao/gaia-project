@@ -1186,6 +1186,13 @@ select {
   gap: 3px;
 }
 
+/* 资源行内科技轨道高度（右对齐到资源行尾） */
+.mat-resources .mat-research-inline {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
 .marker-icon {
   width: 16px;
   height: 16px;
@@ -1966,10 +1973,25 @@ select {
 
 /* 时代标记条已下线（v6：RoundArc / FinalsProgress / BoostersStrip 取代） */
 
-/* 玩家详情弹窗 */
+/* 玩家详情弹窗（整体放大 1.5 倍：内容与非详情一致，只是变大） */
 .player-detail-modal {
   max-width: 640px;
   width: 92vw;
+  zoom: 1.5;
+}
+
+.player-detail-modal .mat-detail-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 6px;
+}
+.player-detail-modal .mat-detail-strip .exploration-board {
+  flex: none;
+}
+.player-detail-modal .mat-detail-strip .tech-booster-strip {
+  flex: 1;
+  min-width: 0;
 }
 
 /* 详情弹窗下方：科技板块 / 推进片两区（实图小图横排，空显示"无"） */

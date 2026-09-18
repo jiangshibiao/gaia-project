@@ -245,8 +245,8 @@ describe('<GameScreen> v6 布局契约', () => {
     renderInGame(store);
     fireEvent.click(screen.getByTestId('mat-detail-1'));
     expect(screen.getByTestId('player-detail')).toBeInTheDocument();
-    // 紧凑面板无爬轨 mini 条，详情弹窗保留
-    expect(document.querySelectorAll('.mat-research')).toHaveLength(1);
+    // 资源行内科技轨道高度（右对齐，两模式都显示）
+    expect(document.querySelectorAll('.mat-research-inline').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByTestId('close-player-detail'));
     expect(screen.queryByTestId('player-detail')).toBeNull();
   });

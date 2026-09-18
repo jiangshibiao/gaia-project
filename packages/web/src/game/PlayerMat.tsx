@@ -48,6 +48,7 @@ import {
   techTileName,
   trackName,
 } from './display';
+import { ExplorationBoard } from './ExplorationBoard';
 
 const TRACK_ORDER: readonly ResearchTrack[] = ['terra', 'nav', 'int', 'gaia', 'eco', 'sci'];
 const TRACK_SHORT: Record<ResearchTrack, string> = {
@@ -196,18 +197,16 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
           <img className="marker-icon" src={markerImage('Qic')} alt="Q" />
           {p.resources.qic}
         </span>
-      </div>
-
-      {detailed === true ? (
-        <div className="mat-row mat-research">
+        {/* 科技轨道高度（右对齐） */}
+        <span className="mat-research-inline">
           {TRACK_ORDER.map((t) => (
             <span key={t} className={`research-pip level-${p.research[t]}`} title={`${trackName(t)} L${p.research[t]}`}>
               {TRACK_SHORT[t]}
               {p.research[t]}
             </span>
           ))}
-        </div>
-      ) : null}
+        </span>
+      </div>
 
       {p.shuttles.length > 0 || p.artifacts.length > 0 ? (
         <div className="mat-row mat-lf">
@@ -223,42 +222,9 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
       ) : null}
 
       {detailed === true ? (
-        <div className="mat-detail-sections">
-          <div className="detail-section" data-testid={`detail-tech-${playerIdx}`}>
-            <span className="detail-label">科技板块</span>
-            {uncoveredTech.length === 0 && p.advTechTiles.length === 0 ? (
-              <span className="detail-empty">无</span>
-            ) : (
-              <div className="detail-tiles">
-                {uncoveredTech.map((t) => (
-                  <img key={t} className="tile-img" src={techTileImage(t)} alt={techTileName(t)} title={techTileName(t)} />
-                ))}
-                {p.advTechTiles.map((t) => (
-                  <span
-                    key={t.id}
-                    className="tech-stack"
-                    title={`${advTechTileName(t.id)}（覆盖 ${techTileName(t.covers)}）`}
-                  >
-                    <img
-                      className="tile-img covered"
-                      src={techTileImage(t.covers)}
-                      alt={techTileName(t.covers)}
-                      title={`${techTileName(t.covers)}（被覆盖）`}
-                    />
-                    <img className="tile-img adv-top" src={advTechTileImage(t.id)} alt={advTechTileName(t.id)} />
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="detail-section" data-testid={`detail-booster-${playerIdx}`}>
-            <span className="detail-label">推进片</span>
-            {p.booster === null ? (
-              <span className="detail-empty">无</span>
-            ) : (
-              <img className="tile-img" src={boosterImage(p.booster)} alt={boosterName(p.booster)} title={boosterName(p.booster)} />
-            )}
-          </div>
+        <div className="mat-detail-strip">
+          <ExplorationBoard state={state} seat={playerIdx} />
+          <TechBoosterStrip state={state} playerIdx={playerIdx} />
         </div>
       ) : null}
     </section>

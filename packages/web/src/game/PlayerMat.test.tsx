@@ -140,42 +140,39 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
     expect(m2?.className).not.toContain('draggable');
   });
 
-  it('详情弹窗（detailed）：科技板块与推进片两区；被覆盖标准板置灰垫高级板下；空显示"无"', () => {
-    const state = fixture(['terrans', 'xenos']);
+  it('详情弹窗（detailed）：渲染探索板 + TechBoosterStrip（科技/高级/联邦/推进）', () => {
+    const state = fixture(['terrans', 'xenos'], true);
     const p = state.players[0]!;
     p.techTiles = ['tech2', 'tech5'];
     p.advTechTiles = [{ id: 'advtech3', covers: 'tech5' }];
     p.booster = 'booster4';
     const { getByTestId, unmount } = render(<PlayerMat state={state} playerIdx={0} detailed />);
-    const tech = getByTestId('detail-tech-0');
-    // 未被覆盖的标准板直出；被覆盖的 tech5 在 tech-stack 内置灰（covered），高级板叠上（adv-top）
-    expect(tech.querySelector('img[src*="TECtyp"]')).not.toBeNull();
-    const stack = tech.querySelector('.tech-stack');
+    // 探索板（LF）
+    expect(getByTestId('exploration-board-0')).toBeInTheDocument();
+    // TechBoosterStrip：未被覆盖的标准板直出；被覆盖的 tech5 置灰垫高级板下；推进片实图
+    const strip = getByTestId('tech-booster-strip-0');
+    expect(strip.querySelector('img[src*="TECtyp"]')).not.toBeNull();
+    const stack = strip.querySelector('.tech-stack');
     expect(stack?.querySelector('img.covered')?.getAttribute('src')).toContain('TECore');
     expect(stack?.querySelector('img.adv-top')?.getAttribute('src')).toContain('ADVqic');
     expect(stack?.getAttribute('title')).toContain('覆盖');
-    // 推进片实图
-    const booster = getByTestId('detail-booster-0');
-    expect(booster.querySelector('img')?.getAttribute('src')).toContain('BOOter');
+    expect(strip.querySelector('img.booster')?.getAttribute('src')).toContain('BOOter');
     unmount();
 
-    // 空：两区都显示"无"
+    // 空：TechBoosterStrip 不渲染（探索板仍在）
     p.techTiles = [];
     p.advTechTiles = [];
     p.booster = null;
-    const { getByTestId: g2 } = render(<PlayerMat state={state} playerIdx={0} detailed />);
-    expect(g2('detail-tech-0').textContent).toContain('无');
-    expect(g2('detail-tech-0').querySelectorAll('img')).toHaveLength(0);
-    expect(g2('detail-booster-0').textContent).toContain('无');
-    expect(g2('detail-booster-0').querySelectorAll('img')).toHaveLength(0);
+    const { queryByTestId, getByTestId: g2 } = render(<PlayerMat state={state} playerIdx={0} detailed />);
+    expect(queryByTestId('tech-booster-strip-0')).toBeNull();
+    expect(g2('exploration-board-0')).toBeInTheDocument();
   });
 
-  it('非详情模式不渲染科技板/推进片详区', () => {
+  it('非详情模式不渲染探索板详区横条', () => {
     const state = fixture(['terrans', 'xenos']);
     state.players[0]!.booster = 'booster1';
     const { queryByTestId } = render(<PlayerMat state={state} playerIdx={0} />);
-    expect(queryByTestId('detail-tech-0')).toBeNull();
-    expect(queryByTestId('detail-booster-0')).toBeNull();
+    expect(queryByTestId('tech-booster-strip-0')).toBeNull();
   });
 
   it('卫星/空间站 misc 行已删除（无 mat-misc、无"卫×"占位）', () => {
