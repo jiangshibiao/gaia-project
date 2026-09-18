@@ -168,6 +168,6 @@ v2 数据（4p LF 固定池，2026-09-18 三轮调优+自我深搜后）：内�
 
 - LLM 决策链已实现但需 ANTHROPIC_API_KEY 才启用（预筛仍走 v1 scoreAction）。
 - Solo Automa 未实现（项目不做单人）。
-- Moweyds 族板无高清图（用小图回退）；Twilight 船板图来自 BGG 开箱照（非官方渲染）。
+- Twilight 船板图来自 BGG 开箱照（非官方渲染）。
 - Tinkering tiles 只有合影图（未裁单块，面板用文字标签）。
 - 推进片池（BoostersStrip）位置用户后续还要调（当前在中央底部左侧）。

@@ -165,7 +165,7 @@ const FACTION_BOARD_HI_FILE: Record<FactionId, string | null> = {
   'space-giants': 'space-giants_board_bgg9503663.png',
   tinkeroids: 'tinkeroids_board_feuerland.jpg',
   darkanians: 'darkanians_board_bgg9503663.png',
-  moweyds: null,
+  moweyds: 'moweyds_board_wellplayed.jpg',
 };
 
 /** 族板整图（Etchelon 扫描 / LF 官方渲染·BGG 开箱正面照）；null = 无高清图。 */

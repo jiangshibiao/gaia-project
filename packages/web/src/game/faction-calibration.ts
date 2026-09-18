@@ -19,7 +19,8 @@
  *   平整无透视），收入轨布局与模板有系统性差异（矿/TS 行整体右移、
  *   行间距更宽），用 ReadMediaFile 分区放大单独逐点标定（两板同组
  *   照片、几何一致，已抽查互验，共用一份标定）；
- * - moweyds 无高清图：image = null，PlayerMat 回退旧布局。
+ * - moweyds：wellplayed.ch 官方渲染图（990×641，青色大胡子），布局与模板
+ *   逐点吻合，直接用 TEMPLATE（此前误用的 BGG 粉色俯视照是别族且倾斜，已弃）。
  */
 import type { FactionId } from '@gaia/engine';
 import { factionBoardImage } from '../assets';
@@ -56,6 +57,9 @@ const BASE_ASPECT = 1753 / 1117;
 const LF_RENDER_ASPECT = 2000 / 1267;
 /** LF BGG 开箱正面照宽高比（2870×1851）。 */
 const LF_PHOTO_ASPECT = 2870 / 1851;
+
+/** moweyds 官方渲染图宽高比（wellplayed.ch，990×641）。 */
+const MOWEYDS_RENDER_ASPECT = 990 / 641;
 
 /** 模板（Terrans 标定；除 bescods 外 13 块基础族板与 LF 渲染板同布局）。 */
 const TEMPLATE = {
@@ -132,7 +136,8 @@ function buildCalibrations(): Record<FactionId, FactionBoardCalibration> {
   for (const f of ['space-giants', 'darkanians'] as const) {
     out[f] = { image: factionBoardImage(f), ...LF_PHOTO };
   }
-  out.moweyds = { image: null, ...TEMPLATE };
+  // moweyds：wellplayed 官方渲染图（990×641），布局与模板逐点吻合，直接用 TEMPLATE。
+  out.moweyds = { image: factionBoardImage('moweyds'), ...TEMPLATE, aspect: MOWEYDS_RENDER_ASPECT };
   return out;
 }
 

@@ -1,10 +1,11 @@
 /**
  * faction-calibration 结构契约：
- * - 18 个 FactionId 均有校准条目；仅 moweyds 无高清图（image=null 回退旧布局）；
+ * - 18 个 FactionId 均有校准条目，且全部有高清图（moweyds 于 2026-09 补齐）；
  * - hi 文件名映射正确（BalTaks/Firak/HadschHallas 拼写；LF 照片板为 .png）；
  * - 全部叠加坐标在 0..1；槽位数：矿 8 / TS 4 / 实验室 3 / gaiaformer 3；
  * - 槽位 x 左→右递增（取用顺序）；bescods PI/学院左右互换；
- * - darkanians/space-giants 用 LF 开箱正面照单独标定（2870×1851）。
+ * - darkanians/space-giants 用 LF 开箱正面照单独标定（2870×1851）；
+ * - moweyds 用 wellplayed 官方渲染图（990×641，布局与模板逐点吻合）。
  */
 import { describe, expect, it } from 'vitest';
 import type { FactionId } from '@gaia/engine';
@@ -23,16 +24,12 @@ function expect01(p: RelPoint, label: string): void {
 }
 
 describe('faction-calibration 结构', () => {
-  it('18 族均有条目；仅 moweyds 无高清图', () => {
+  it('18 族均有条目且全部有高清图', () => {
     expect(ALL_FACTIONS).toHaveLength(18);
     for (const f of ALL_FACTIONS) {
       const cal = factionCalibration(f);
       expect(cal.aspect).toBeGreaterThan(1);
-      if (f === 'moweyds') {
-        expect(cal.image).toBeNull();
-      } else {
-        expect(cal.image, f).toMatch(/^\/assets\/factions\/hi\/.+\.(jpg|png)$/);
-      }
+      expect(cal.image, f).toMatch(/^\/assets\/factions\/hi\/.+\.(jpg|png)$/);
     }
   });
 
@@ -43,7 +40,7 @@ describe('faction-calibration 结构', () => {
     expect(factionBoardImage('space-giants')).toBe('/assets/factions/hi/space-giants_board_bgg9503663.png');
     expect(factionBoardImage('tinkeroids')).toBe('/assets/factions/hi/tinkeroids_board_feuerland.jpg');
     expect(factionBoardImage('darkanians')).toBe('/assets/factions/hi/darkanians_board_bgg9503663.png');
-    expect(factionBoardImage('moweyds')).toBeNull();
+    expect(factionBoardImage('moweyds')).toBe('/assets/factions/hi/moweyds_board_wellplayed.jpg');
   });
 
   it('全部叠加坐标在 0..1，槽位数正确', () => {

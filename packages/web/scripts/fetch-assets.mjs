@@ -126,6 +126,8 @@ FILES.push([`${FEUERLAND}/GP_Exp_FleetShips_DE_Eclipse.jpg`, `lf/ships/eclipse_b
 FILES.push([`${FEUERLAND}/GP_Exp_FleetShips_Rebellion.jpg`, `lf/ships/rebellion_board_feuerland.jpg`]);
 FILES.push([`${FEUERLAND}/GP_Exp_Player_Tableaus_SpaceGiants.jpg`, `factions/hi/space-giants_board_feuerland.jpg`]);
 FILES.push([`${FEUERLAND}/GP_Exp_Player_Tableaus_DE_Tinkeroids.jpg`, `factions/hi/tinkeroids_board_feuerland.jpg`]);
+// moweyds 族板：wellplayed 官方渲染图（青色大胡子；勿再用 BGG 粉色俯视照——那是别族）
+FILES.push(['https://www.wellplayed.ch/cdn/shop/files/gaia-project-the-lost-fleet-en-capstone-games-board-499.webp?v=1733721780&width=1080', 'factions/hi/moweyds_board_wellplayed.jpg']);
 
 /** BGG 合影裁剪：[src, dest, [x, y, w, h]]。 */
 const CROPS = [
