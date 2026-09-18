@@ -83,7 +83,10 @@ export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowD
             active={actor === selected}
             onShowDetail={onShowDetail}
           />
-          <TechBoosterStrip state={state} playerIdx={selected} />
+          <div className="rail-mine-bottom">
+            <ExplorationBoard state={state} seat={selected} />
+            <TechBoosterStrip state={state} playerIdx={selected} />
+          </div>
         </div>
       ) : null}
     </aside>
