@@ -195,6 +195,7 @@ export function applyUpgrade(
   if (action.to === 'pi' && p.faction === 'gleens' && (state.board.federationTokens['gleens'] ?? 0) > 0) {
     state.board.federationTokens['gleens'] = state.board.federationTokens['gleens']! - 1;
     p.federationTokens.push({ id: 'gleens', flipped: false });
+    p.acquisitions.push({ kind: 'fed', id: 'gleens' });
     const def = FEDERATION_TOKENS['gleens'];
     addVp(p, def.vp);
     if (def.other !== undefined) {

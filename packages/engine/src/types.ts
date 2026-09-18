@@ -350,6 +350,8 @@ export interface PlayerState {
   /** 高级科技板（覆盖在某块标准板上）。 */
   advTechTiles: { id: AdvTechTileId; covers: TechTileId }[];
   federationTokens: FederationTokenState[];
+  /** 科技/高级/联邦片的获得顺序（跨类型时间序；UI 混排展示用）。 */
+  acquisitions: { kind: 'tech' | 'adv' | 'fed'; id: string }[];
   buildings: BuildingSupply;
   gaiaformers: GaiaformerState;
   booster: BoosterId | null;

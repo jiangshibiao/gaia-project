@@ -2467,3 +2467,18 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 左栏个人版图下方横条：探索板（左）+ 科技/推进/联邦片（右） */
+.rail-mine-bottom {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 6px;
+}
+.rail-mine-bottom .exploration-board {
+  flex: none;
+}
+.rail-mine-bottom .tech-booster-strip {
+  flex: 1;
+  min-width: 0;
+}

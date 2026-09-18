@@ -12,6 +12,7 @@ import type { ReactElement } from 'react';
 import type { BuildingSupply, PlayerIndex } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
 import { playerColor } from './display';
+import { ExplorationBoard } from './ExplorationBoard';
 import { PlayerMat, TechBoosterStrip } from './PlayerMat';
 
 export interface LeftRailProps {
@@ -46,7 +47,10 @@ export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowD
           onShowDetail={onShowDetail}
           onBuildingDragStart={actor === seat ? onBuildingDragStart : undefined}
         />
-        <TechBoosterStrip state={state} playerIdx={seat} />
+        <div className="rail-mine-bottom">
+          <ExplorationBoard state={state} seat={seat} />
+          <TechBoosterStrip state={state} playerIdx={seat} />
+        </div>
       </div>
 
       {/* 下块：对手版图（TAB 切换；单对手免 TAB） */}

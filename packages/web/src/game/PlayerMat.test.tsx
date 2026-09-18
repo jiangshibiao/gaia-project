@@ -15,7 +15,7 @@ import type { FactionId } from '@gaia/engine';
 import { filterStateFor } from '@gaia/protocol';
 import type { FilteredState } from '@gaia/protocol';
 import { factionBoardImage } from '../assets';
-import { PlayerMat } from './PlayerMat';
+import { PlayerMat, TechBoosterStrip } from './PlayerMat';
 
 function fixture(factions: FactionId[], lostFleet = false): FilteredState {
   return filterStateFor(
@@ -187,34 +187,33 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
     expect(container.textContent).not.toContain('卫×');
   });
 
-  it('联邦标记单行放下：不 wrap，标记宽 = (可用宽 − 固定间隙) ÷ 标记数', () => {
+  it('联邦片与科技片按获得顺序混排在 TechBoosterStrip（翻灰面保留样式）', () => {
     const state = fixture(['terrans', 'xenos']);
     state.players[0]!.federationTokens = [
       { id: 'fed1', flipped: false },
       { id: 'fed2', flipped: false },
       { id: 'fed3', flipped: true },
     ];
-    const { container, getByTestId, unmount } = render(<PlayerMat state={state} playerIdx={0} />);
-    const row = getByTestId('mat-feds-0');
-    const imgs = row.querySelectorAll<HTMLImageElement>('img.tile-img.fed');
-    expect(imgs).toHaveLength(3);
-    for (const img of imgs) {
-      expect(img.style.maxWidth).toBe('calc((100% - 10px) / 3)');
-    }
+    state.players[0]!.acquisitions = [
+      { kind: 'tech', id: 'tech1' },
+      { kind: 'fed', id: 'fed1' },
+      { kind: 'adv', id: 'advtech4' },
+      { kind: 'fed', id: 'fed2' },
+      { kind: 'fed', id: 'fed3' },
+    ];
+    state.players[0]!.techTiles = ['tech1'];
+    state.players[0]!.advTechTiles = [{ id: 'advtech4', covers: 'tech1' }];
+    const { container, getByTestId } = render(<TechBoosterStrip state={state} playerIdx={0} />);
+    const strip = getByTestId('tech-booster-strip-0');
+    const feds = strip.querySelectorAll<HTMLImageElement>('img.tile-img.fed');
+    expect(feds).toHaveLength(3);
+    // 混排顺序 = acquisitions 顺序：tech1 → fed1 → advtech4 → fed2 → fed3
+    const kinds = Array.from(strip.querySelector('.strip-tech')!.children).map(
+      (el) => el.getAttribute('data-testid') ?? el.className,
+    );
+    expect(kinds[0]).toContain('tile-img');
+    expect(strip.querySelectorAll('img[data-testid^="strip-fed-0-"]')).toHaveLength(3);
     // 翻转标记保留灰面样式
     expect(container.querySelector('.tile-img.fed.flipped')).not.toBeNull();
-    unmount();
-
-    // 5 枚时间隙/份数随数量变化（自适应缩小）
-    state.players[0]!.federationTokens = [
-      { id: 'fed1', flipped: false },
-      { id: 'fed2', flipped: false },
-      { id: 'fed3', flipped: false },
-      { id: 'fed4', flipped: false },
-      { id: 'fed5', flipped: false },
-    ];
-    const { getByTestId: g2 } = render(<PlayerMat state={state} playerIdx={0} />);
-    const img5 = g2('mat-feds-0').querySelector<HTMLImageElement>('img.tile-img.fed');
-    expect(img5?.style.maxWidth).toBe('calc((100% - 20px) / 5)');
   });
 });

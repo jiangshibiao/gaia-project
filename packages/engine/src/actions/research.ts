@@ -203,6 +203,7 @@ export function advanceResearchLevel(
     const tokenId = state.board.terraformingL5Token;
     const def = FEDERATION_TOKENS[tokenId];
     p.federationTokens.push({ id: tokenId, flipped: false, fromTerraformingL5: true });
+    p.acquisitions.push({ kind: 'fed', id: tokenId });
     state.board.terraformingL5Token = null;
     addVp(p, def.vp);
     if (def.other !== undefined) {

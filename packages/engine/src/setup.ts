@@ -590,6 +590,7 @@ function initPlayer(faction: FactionId, lostFleet: boolean, startingVp: number =
     techTiles: [],
     advTechTiles: [],
     federationTokens: [],
+    acquisitions: [],
     buildings: { mine: 8, ts: 4, lab: 3, pi: 1, ac1: 1, ac2: 1 },
     gaiaformers,
     booster: null,

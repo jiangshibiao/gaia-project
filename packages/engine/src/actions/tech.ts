@@ -246,6 +246,7 @@ export function applyTechTileChoice(state: GameState, idx: PlayerIndex, choice: 
     tok.flipped = true;
     state.board.advTechTiles[slot] = null;
     p.advTechTiles.push({ id: choice.advTechTile, covers: cover });
+    p.acquisitions.push({ kind: 'adv', id: choice.advTechTile });
     freeMine = applyOnceEffect(state, idx, ADV_TECH_TILES[choice.advTechTile].effect);
   } else if (choice.techTile !== undefined) {
     const id = choice.techTile;
@@ -271,6 +272,7 @@ export function applyTechTileChoice(state: GameState, idx: PlayerIndex, choice: 
       state.board.techTiles[id] = state.board.techTiles[id]! - 1;
     }
     p.techTiles.push(id);
+    p.acquisitions.push({ kind: 'tech', id });
     freeMine = applyOnceEffect(state, idx, TECH_TILES[id].effect);
   } else {
     throw new IllegalActionError('no-tech-tile', '拿板选择为空');

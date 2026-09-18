@@ -500,6 +500,7 @@ export function applyFormFederation(
     state.board.federationTokens[action.token] = state.board.federationTokens[action.token]! - 1;
   }
   p.federationTokens.push({ id: action.token, flipped: fromShip === undefined && action.token === 'fed1' });
+  p.acquisitions.push({ kind: 'fed', id: action.token });
   const effect = applyFederationTokenReward(state, idx, action.token);
   onFederationFormed(state, idx);
   settlePendingAfter(state, idx, [], {

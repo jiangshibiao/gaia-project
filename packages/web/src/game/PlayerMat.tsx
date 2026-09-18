@@ -48,7 +48,6 @@ import {
   techTileName,
   trackName,
 } from './display';
-import { fedTokenMaxWidth } from './fedRow';
 
 const TRACK_ORDER: readonly ResearchTrack[] = ['terra', 'nav', 'int', 'gaia', 'eco', 'sci'];
 const TRACK_SHORT: Record<ResearchTrack, string> = {
@@ -210,21 +209,6 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
         </div>
       ) : null}
 
-      {p.federationTokens.length > 0 ? (
-        <div className="mat-row mat-feds" data-testid={`mat-feds-${playerIdx}`}>
-          {p.federationTokens.map((f, i) => (
-            <img
-              key={`${f.id}-${i}`}
-              className={`tile-img sm fed${f.flipped ? ' flipped' : ''}`}
-              style={{ maxWidth: fedTokenMaxWidth(p.federationTokens.length, 5) }}
-              src={federationTokenImage(f.id)}
-              alt={federationTokenName(f.id)}
-              title={`${federationTokenName(f.id)}${f.flipped ? '（已翻灰面）' : ''}`}
-            />
-          ))}
-        </div>
-      ) : null}
-
       {p.shuttles.length > 0 || p.artifacts.length > 0 ? (
         <div className="mat-row mat-lf">
           {p.shuttles.map((sh) => (
@@ -291,28 +275,63 @@ export function TechBoosterStrip({ state, playerIdx }: { state: FilteredState; p
   if (p === undefined) return null;
   const covered = new Set(p.advTechTiles.map((t) => t.covers));
   const uncoveredTech = p.techTiles.filter((t) => !covered.has(t));
-  if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.booster === null) return null;
+  if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.booster === null && p.federationTokens.length === 0) return null;
+  /** 按获得时间混排（acquisitions 为空时回退：科技→高级→联邦的分组序）。 */
+  const items =
+    p.acquisitions.length > 0
+      ? p.acquisitions
+      : ([
+          ...uncoveredTech.map((id) => ({ kind: 'tech' as const, id })),
+          ...p.advTechTiles.map((t) => ({ kind: 'adv' as const, id: t.id })),
+          ...p.federationTokens.map((f) => ({ kind: 'fed' as const, id: f.id })),
+        ] as { kind: 'tech' | 'adv' | 'fed'; id: string }[]);
+  const fedState = (id: string) => p.federationTokens.find((f) => f.id === id);
   return (
     <div className="tech-booster-strip" data-testid={`tech-booster-strip-${playerIdx}`}>
       <div className="strip-tech">
-        {uncoveredTech.map((t) => (
-          <img key={t} className="tile-img" src={techTileImage(t)} alt={techTileName(t)} title={techTileName(t)} />
-        ))}
-        {p.advTechTiles.map((t) => (
-          <span
-            key={t.id}
-            className="tech-stack"
-            title={`${advTechTileName(t.id)}（覆盖 ${techTileName(t.covers)}）`}
-          >
+        {items.map((item, i) => {
+          if (item.kind === 'tech') {
+            return (
+              <img
+                key={`tech-${item.id}-${i}`}
+                className="tile-img"
+                src={techTileImage(item.id as Parameters<typeof techTileImage>[0])}
+                alt={techTileName(item.id as Parameters<typeof techTileName>[0])}
+                title={techTileName(item.id as Parameters<typeof techTileName>[0])}
+              />
+            );
+          }
+          if (item.kind === 'adv') {
+            const adv = p.advTechTiles.find((t) => t.id === item.id);
+            if (adv === undefined) return null;
+            return (
+              <span
+                key={`adv-${item.id}-${i}`}
+                className="tech-stack"
+                title={`${advTechTileName(adv.id)}（覆盖 ${techTileName(adv.covers)}）`}
+              >
+                <img
+                  className="tile-img covered"
+                  src={techTileImage(adv.covers)}
+                  alt={techTileName(adv.covers)}
+                  title={`${techTileName(adv.covers)}（被覆盖）`}
+                />
+                <img className="tile-img adv-top" src={advTechTileImage(adv.id)} alt={advTechTileName(adv.id)} />
+              </span>
+            );
+          }
+          const f = fedState(item.id);
+          return (
             <img
-              className="tile-img covered"
-              src={techTileImage(t.covers)}
-              alt={techTileName(t.covers)}
-              title={`${techTileName(t.covers)}（被覆盖）`}
+              key={`fed-${item.id}-${i}`}
+              className={`tile-img fed${f?.flipped === true ? ' flipped' : ''}`}
+              data-testid={`strip-fed-${playerIdx}-${i}`}
+              src={federationTokenImage(item.id as Parameters<typeof federationTokenImage>[0])}
+              alt={federationTokenName(item.id as Parameters<typeof federationTokenName>[0])}
+              title={`${federationTokenName(item.id as Parameters<typeof federationTokenName>[0])}${f?.flipped === true ? '（已翻灰面）' : ''}`}
             />
-            <img className="tile-img adv-top" src={advTechTileImage(t.id)} alt={advTechTileName(t.id)} />
-          </span>
-        ))}
+          );
+        })}
       </div>
       {p.booster !== null ? (
         <div className="strip-boosters">
