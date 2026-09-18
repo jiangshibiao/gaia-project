@@ -33,3 +33,4 @@ packages/*/test/**/*.d.ts
 packages/*/bench/**/*.js
 packages/*/bench/**/*.d.ts
 *.tsbuildinfo
+bench/
