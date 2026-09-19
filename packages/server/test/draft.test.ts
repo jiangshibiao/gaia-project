@@ -77,6 +77,20 @@ describe('friendly', () => {
     expect(() => bid(d, 0, 'terrans', 1)).toThrowError(/仅竞价模式/);
     expect(() => draftResult(d)).toThrowError(/尚未结束/);
   });
+
+  it('正反面冲突：同一块探索板的另一族已被持有 → invalid-faction', () => {
+    const d = makeDraft('friendly', 3);
+    pick(d, 0, 'terrans'); // terrans 与 lantids 同板
+    expect(() => pick(d, 1, 'lantids')).toThrowError(DraftError);
+    expect(() => pick(d, 1, 'lantids')).toThrowError(/正反面/);
+    // 失败后状态未变：座位 1 仍可正常选不冲突的族
+    pick(d, 1, 'xenos');
+    expect(d.finished).toBe(false);
+    // 竞价模式的 draftPick 同样受正反面约束
+    const a = makeDraft('auction', 3);
+    pick(a, 0, 'nevlas');
+    expect(() => pick(a, 1, 'itars')).toThrowError(/正反面/);
+  });
 });
 
 describe('auction', () => {

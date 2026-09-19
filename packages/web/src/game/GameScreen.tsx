@@ -346,18 +346,12 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
           <div className="scoreboard" data-testid="scoreboard">
             <RoundArc state={state} />
             <div className="scoreboard-ext-row">
-              <span className="scoreboard-misc" data-testid="scoring-round-info">
-                回合 {state.round}/6
-              </span>
               <AdvExtension
                 state={state}
                 activeField={question?.field.key ?? null}
                 activeOptions={activeOptions}
                 onPick={applyPick}
               />
-              <span className="scoreboard-misc">
-                先手：{nicknames[state.firstPlayer] ?? `玩家 ${state.firstPlayer + 1}`}
-              </span>
               <button
                 type="button"
                 className="btn-ghost score-toggle"

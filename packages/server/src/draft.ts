@@ -53,6 +53,31 @@ const LF_FACTION_IDS: ReadonlySet<string> = new Set<FactionId>([
 
 const ALL_FACTION_IDS = Object.keys(FACTIONS) as FactionId[];
 
+/**
+ * Lost Fleet 探索板正反面配对（9 块双面板，规则书 p16）：
+ * 同一局不允许两名玩家使用同一块探索板的正反面（共享同一块板）。
+ */
+const EXPLORATION_PAIRS: readonly (readonly [FactionId, FactionId])[] = [
+  ['nevlas', 'itars'],
+  ['lantids', 'terrans'],
+  ['taklons', 'ambas'],
+  ['xenos', 'gleens'],
+  ['bescods', 'firaks'],
+  ['space-giants', 'moweyds'],
+  ['baltaks', 'geodens'],
+  ['ivits', 'hadsch-hallas'],
+  ['tinkeroids', 'darkanians'],
+];
+
+/** 返回与 faction 同一块探索板的另一族；不在配对表中时返回 null。 */
+export function pairedFaction(faction: FactionId): FactionId | null {
+  for (const [a, b] of EXPLORATION_PAIRS) {
+    if (a === faction) return b;
+    if (b === faction) return a;
+  }
+  return null;
+}
+
 /** draft 可选种族全集：lostFleet 18 族，否则基础 14 族。 */
 export function draftFactionPool(lostFleet: boolean): FactionId[] {
   return lostFleet ? ALL_FACTION_IDS : ALL_FACTION_IDS.filter((f) => !LF_FACTION_IDS.has(f));
@@ -142,6 +167,17 @@ export function applyDraftPick(
         : `${faction} 已被座位 ${holder} 选取`,
     );
   }
+  // 探索板正反面冲突：同一块探索板的另一族已被持有，不能共享同一块板。
+  const pair = pairedFaction(faction);
+  if (pair !== null) {
+    const pairHolder = holderOf(state, pair);
+    if (pairHolder !== null) {
+      throw new DraftError(
+        'invalid-faction',
+        `${faction} 与 ${pair} 共用同一块探索板（正反面）——已被座位 ${pairHolder} 占用，不能共享`,
+      );
+    }
+  }
   state.picks[seat] = { faction, bid: 0 };
   advance(state, pool);
 }
@@ -167,6 +203,17 @@ export function applyDraftBid(
   const holder = holderOf(state, faction);
   if (holder === null) {
     throw new DraftError('invalid-faction', `${faction} 无人持有——直接选取即可，无需出价`);
+  }
+  // 探索板正反面冲突（竞价抢走他人族时同样不能共享同一块板）。
+  const pair = pairedFaction(faction);
+  if (pair !== null) {
+    const pairHolder = holderOf(state, pair);
+    if (pairHolder !== null && pairHolder !== holder) {
+      throw new DraftError(
+        'invalid-faction',
+        `${faction} 与 ${pair} 共用同一块探索板（正反面）——已被座位 ${pairHolder} 占用，不能共享`,
+      );
+    }
   }
   const current = state.picks[holder]!.bid;
   if (!Number.isInteger(bid) || bid < current + 1 || bid > current + MAX_BID_RAISE) {

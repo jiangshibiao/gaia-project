@@ -537,8 +537,8 @@ select {
 .rail-l .tech-booster-strip {
   flex: 1;
   min-height: 0;
-  align-content: flex-start;
-  align-items: flex-start;
+  align-content: flex-end;
+  align-items: flex-end;
 }
 
 /* 对手 TAB 细条：座位色小方块 + 昵称 + 当前行动者指示点 */
@@ -613,7 +613,7 @@ select {
 }
 
 .tech-booster-strip .strip-tech .tile-img {
-  width: min(7.2vh, 64px);
+  width: min(3.2vh, 30px);
 }
 
 .tech-booster-strip .strip-boosters {
@@ -625,23 +625,23 @@ select {
 
 .tech-booster-strip .strip-boosters .tile-img.booster {
   width: auto;
-  height: 100%;
-  max-height: 9vh;
+  height: min(9vh, 90px);
+  object-fit: contain;
 }
 
 .tech-booster-strip .tech-stack {
   position: relative;
   display: inline-block;
   flex: none;
-  width: min(8.6vh, 78px);
-  height: min(5.8vh, 52px);
+  width: min(4vh, 36px);
+  height: min(2.7vh, 24px);
 }
 
 .tech-booster-strip .tech-stack .covered {
   position: absolute;
   left: 0;
   bottom: 0;
-  width: min(4.6vh, 42px);
+  width: min(2.2vh, 20px);
   filter: grayscale(1);
   opacity: 0.55;
 }
@@ -650,7 +650,7 @@ select {
   position: absolute;
   right: 0;
   top: 0;
-  width: min(6.2vh, 56px);
+  width: min(2.9vh, 26px);
 }
 
 .rail-l .player-mat {
@@ -855,7 +855,7 @@ select {
 .round-arc {
   position: relative;
   width: 100%;
-  aspect-ratio: 2.1;
+  aspect-ratio: 3.2;
   flex: none;
 }
 
@@ -2423,7 +2423,8 @@ select {
 /* ---- 探索板（Lost Fleet 各族专属飞船面板，占位自绘版） ---- */
 .exploration-board {
   flex: none;
-  width: 168px;
+  width: fit-content;
+  max-width: 160px;
   align-self: stretch;
   display: flex;
   flex-direction: column;
@@ -2490,15 +2491,17 @@ select {
   white-space: nowrap;
 }
 
-/* 左栏个人版图下方横条：探索板（左）+ 科技/推进/联邦片（右） */
+/* 左栏个人版图下方横条：探索板（左）+ 科技/推进/联邦片（右）；沉到 rail-mine 底部 */
 .rail-mine-bottom {
   display: flex;
   align-items: stretch;
-  gap: 8px;
-  margin-top: 6px;
+  gap: 6px;
+  margin-top: auto;
 }
 .rail-mine-bottom .exploration-board {
   flex: none;
+  width: auto;
+  min-width: 0;
 }
 .rail-mine-bottom .tech-booster-strip {
   flex: 1;

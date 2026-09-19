@@ -123,6 +123,26 @@ class PreviewStore {
     // 快进到主阶段 seat 0 首个回合（setup 全部自动行动），
     // 使建矿/升级拖拽与行动格直点都能在 preview 实测
     this.autoPlay(() => this.game.phase !== 'setup' && actorOf(this.game) === 0);
+    // 塞科技片/高级片/联邦片/助推器，验证左栏横条有内容时的布局
+    {
+      const p = this.game.players[0]!;
+      p.techTiles = ['tech2', 'tech5'];
+      p.advTechTiles = [{ id: 'advtech3', covers: 'tech5' }];
+      p.booster = 'booster4';
+      p.federationTokens = [
+        { id: 'fed1', flipped: false },
+        { id: 'fed2', flipped: false },
+        { id: 'fed3', flipped: true },
+      ];
+      p.acquisitions = [
+        { kind: 'tech', id: 'tech2' },
+        { kind: 'fed', id: 'fed1' },
+        { kind: 'adv', id: 'advtech3' },
+        { kind: 'fed', id: 'fed2' },
+        { kind: 'tech', id: 'tech5' },
+        { kind: 'fed', id: 'fed3' },
+      ];
+    }
     this.state = this.buildState(1);
   }
 

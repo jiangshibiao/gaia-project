@@ -70,11 +70,11 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(scoreboard).not.toBeNull();
     expect(railR.querySelector('[data-testid="round-arc"]')).not.toBeNull();
     expect(railR.querySelector('[data-testid="finals-progress"]')).not.toBeNull();
-    // LF 第 7 高级板槽在计分区扩展条（不在研究板上）
+    // LF 第 7 高级板槽在计分区扩展条（不在研究板上）；回合/先手信息已下线
     expect(scoreboard?.querySelector('[data-testid="adv-extension"]')).not.toBeNull();
     expect(scoreboard?.querySelector('[data-testid="adv-slot-6"]')).not.toBeNull();
     expect(railR.querySelector('[data-testid="research-board"] [data-testid="adv-slot-6"]')).toBeNull();
-    expect(railR.querySelector('[data-testid="scoring-round-info"]')?.textContent).toContain('/6');
+    expect(railR.querySelector('[data-testid="scoring-round-info"]')).toBeNull();
   });
 
   it('对手 TAB 点击切换版图，当前行动者 tab 带指示点', () => {
