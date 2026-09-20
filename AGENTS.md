@@ -39,6 +39,7 @@ Etchelon/boardgamers viewer/uiqoo/Feuerland/BGG 等公开来源重建（约 300 
 - **不要让裸 `tsc` 的 `.js` 产物进 `packages/*/src`**（已被 gitignore；陈旧 .js 会让 vitest 优先加载它们导致解析失败）。
 - **引擎纯函数 + 种子确定性**：`newGame(config)` 同 config 逐字节一致；`applyAction` 克隆后原地改；随机一律 `createRng(seed)`（mulberry32），引擎内禁止 `Date.now`/`Math.random`；`stableStringify` 做重放与合法性校验（行动 = 枚举集成员比对）。
 - **行动模型**：原子行动 + pending 队列。主行动消耗回合；免费行动不消耗；pending（charge 队首/其他 kind 的 .player）> setupQueue[0] > currentPlayerIdx（`actorOf` 统一裁决，server/web 共用）。
+- **撤销（undo）**：`session.undo(seat)` 截断落库到该座位最近回合起点（`actorOf==seat && pending==null` 的最近点）并重放重建；尾段含其他**真人**座位行动则拒（AI 行动/响应可一并回退）。web 端 `store.undo()`；快照 seq 回归时 store 同步裁剪行动日志；GameScreen 回合起点检查点驱动「撤销条」（每次提交后浮出，显示本回合资源/VP 增量，[撤销回合]/[完成]）。
 - **回合顺序**：下轮行动顺序 = 本轮 pass 顺序（不是固定桌序；被动充能/leech 仍按桌序）。
 - **严格 TS**：strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes。改 types.ts 只追加不改语义。
 - **任何服务器拒绝必须有可见反馈**（error-toast；`lastError` 曾只写不上屏，用户以为"点了没反应"）。
@@ -61,23 +62,25 @@ Etchelon/boardgamers viewer/uiqoo/Feuerland/BGG 等公开来源重建（约 300 
 ## 素材与校准（web 美术）
 
 - 素材在 `packages/web/public/assets/`（个人非商用，不进 git；`assets/README.md` 是法律声明，唯一被 track 的素材文件）。
-- **坐标校准一律写数据文件并配测试**：`sector-calibration.ts`（13 扇区统一 325/352.5/81.25，k0=4）、`ship-calibration.ts`（4 船）、`faction-calibration.ts`（族板模板+override）、`research-calibration.ts`（研究板）、`placements.ts`（运行时反推扇区摆放——GameState 不存 placement，按"2 格范围全覆盖 19 格的唯一格"定中心、按布局匹配定旋转；深空三角按内容多重集定面、带镜像旋转匹配定朝向）。
-- 图像处理脚本（裁透明边距/细白边/透视校正）在 `reference/harness/` 与 `.venv`（Pillow/PyMuPDF）。
+- **坐标校准一律写数据文件并配测试**：`sector-calibration.ts`（13 扇区统一 325/352.5/81.25，k0=4）、`ship-calibration.ts`（4 船）、`faction-calibration.ts`（族板模板+override）、`research-calibration.ts`（研究板，含 QIC_COVER_RECT）、`panel-calibration.ts`（种族飞船面板 3 穿梭机槽，全族同模板；顶槽印「3-4」仅 3-4 人局用）、`scoreboard-calibration.ts`（实图计分板：6 回合槽/2 终局槽/2 条计数轨/梯形片高级板槽）、`placements.ts`（运行时反推扇区摆放——GameState 不存 placement，按"2 格范围全覆盖 19 格的唯一格"定中心、按布局匹配定旋转；深空三角按内容多重集定面、带镜像旋转匹配定朝向）。
+- 图像处理脚本（裁透明边距/细白边/透视校正）在 `reference/harness/` 与 `.venv`（Pillow/PyMuPDF）。**用户自拍素材**（2026-09）：`cut-faction-panels.py` 从 05/06 照片抠 18 块种族飞船面板（含正反面配对校验，输出 `factions/panels/<id>.png` 400×1240）、`cut-scoreboard-assets.py` 从 01-04 照片抠计分板/梯形扩展片×2/QIC 覆盖板（含 alpha；原照片在 ~/Downloads，不入库）。
+- **四条船板图**：rebellion/eclipse 用 feuerland 官方渲染（2000×621 黑底）；twilight/tfmars 用 Steam TTS 模组（id 3347152196）内嵌官方渲染（3411×1050 黑底，`*_board_render.jpg`）——曾用 BGG 开箱照但背景灰（44-115 亮度）被用户投诉偏白，feuerland 官网确认无这两艘渲染（Wayback 佐证）。取图渠道备忘：BGG 图库可绕 Cloudflare（`api.geekdo.com/api/images?objectid=<id>&objecttype=thing&pageid=N` 列表 + `api/images/<imageid>` 单图）；Steam Workshop 文件用 `api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/` 免 key 拿 file_url。
 - LF 青/粉两色建筑无图：用红/蓝图 + CSS hue-rotate 近似。**青色要 hue-rotate(-65deg) 才与兰提达纯蓝区分**（-35deg 太接近曾被误认为同族）。
 
-## 布局（v8 定稿）
+## 布局（v9 定稿）
 
 - **顶栏三段式**：左区（与左栏同宽）= 盖亚计划标识 + 第 x/6 轮 + 导出对局；中区（与星图水平对齐）= 本轮计分 + 行动按钮组（含情境按钮 + 兑换下拉）；右区（与右栏同宽）= 先手/轮到/已连接 + 离开房间。
-- **左栏两块**：上 = 我的版图 + 科技片/推进片横条（科技片两行约半高、推进片右对齐满高）；下 = 对手 TAB 细条（座位色块+行动者指示点）+ 选中对手版图。2 人局无 TAB。
-- **中央**：星图（滚轮缩放/拖拽平移/双击复位/自由旋转手柄）+ 底部横条 = 助推器池（左）+ 舰队 2×2（右）。
-- **右栏**：研究轨道整图（自然宽高比、科技片错落堆叠）+ 计分区（回合弧圆环排布：计分图径向旋转成环、母星环外圈、高级科技片扩展条、终局实时进度、回合/先手/计分表）。
-- **复盘模式**：导入 GameRecord 后行动栏替换为回放控制条（⏮/◀/▶/⏭/倍速/进度条）。
+- **左栏两块**：上 = 我的版图 + 正右方竖列【种族飞船面板（LF 实图，上）+ 当回合助推片（下，高 = 版图高 ÷ 2 = `--booster-h`）】（仅 LF 局左栏加宽 `--panel-w`；穿梭机叠加未派显示、已派留空）+ 下方科技/高级/联邦片横条（科技片与研究板同宽 `--rb-tile-w`、联邦片 34px、按获得时间混排）；下 = 对手 TAB 细条（座位色块+行动者指示点）+ 选中对手版图同款组合。2 人局无 TAB。宽屏（>1680px）按 `--ui-k` ≤1.35 放大；**版图/助推器另有全局 0.8× 系数**（底部横条横向防溢出：池随内容定宽 + 舰队 60%，两者不得超过中央宽）。
+- **中央**：星图（滚轮缩放/拖拽平移/双击复位/自由旋转手柄）+ 底部横条 = 助推器池（左，片宽按图比例固定、池随内容收缩、间隙 0.3vh）+ 舰队 2×2（右，60% 宽右对齐）。
+- **右栏**：研究轨道整图（自然宽高比、科技片错落堆叠；**LF 时 QIC 覆盖板盖住右下 3 绿水晶行动格**，引擎同步禁用）+ 计分区 = **实图计分板**（`ScoreboardBoard`：自拍抠图含行星装饰，6 回合片入扇形槽径向旋转、2 终局片入灰面板槽、绿轨按 count 放玩家色点、LF 下接梯形扩展片（按 `scoringExtension` 选面）+ 第 7 高级板槽）+ **常驻计分表**（计分板正下方，无展开态；板面栈按纵横比自适应高度给表让位）；右栏宽由「研究板 1.073 + 计分板 0.981（LF 再 +0.207）× 宽」反推（`--rail-r-w` 按 data-lf 分两档）。
+- **复盘模式**：导入 GameRecord 后布局与对局同构（LeftRail 视角座位版图 + 对手 TAB / 星图 / 右研究计分栏）；回放控制条在**星图正上方**（⏮/◀/▶/⏭/倍速/进度条），顶栏左区 = 标题+轮次+「此处开始对局」（branch_game），右区 = 轮到+退出复盘（对齐「离开房间」）；「视角⇄」按钮在视角版图详情前轮换第一视角。
 
 ## 踩过的坑（勿再犯）
 
 - **静默拒绝**：服务器错误消息（not-your-turn/illegal-action）曾只写 `lastError` 不上屏。任何拒绝路径必须有可见反馈。
 - **下轮顺序**：曾按固定桌序推进回合，对拍发现应为 pass 顺序。
-- **setup 跳过**：ivits（无起始矿）、LF 新族（extra 阶段才放）、xenos（第 3 矿）、darkanians（extra 阶段）的队列推进靠 `settleSetupSkips` 容忍空枚举。
+- **setup 跳过**：ivits（无起始矿）、LF 新族（extra 阶段才放）、xenos（第 3 矿）、darkanians（extra 阶段）的队列推进靠 `settleSetupSkips` 容忍空枚举。**陷阱：该归一化只在 applyAction 后跑——开局无人触发，LF 新族/ivits 在 seat 0 时开局即死锁**；`GameSession` 构造（含 restore/undo 重放）必须先 `settleSetupSkips(newGame(config))`（曾致 JYMRE3 卡死）。
+- **复盘分支（branch_game）**：复盘当前步可「此处开始对局」——record 截断到当前步发 `branch_game`，服务端重放校验后开单人+AI 房间（申请者坐 review.viewSeat，其余座位 AI 托管；开放真人补位未实现）。终局面/空前缀/越界座位分别报 import-invalid/bad-message/invalid-seat。
 - **科技板位置**：拿板可升哪条轨由开局洗入的 9 个位置决定（`board.techTilePositions`），不是固定的。
 - **参考引擎的 quirk 要对齐而非"修正"**：leech 空碗不邀约、fed1 无绿面、setup 放置不产生邀约、ship-credit 建矿逐项扣费（不收 gaia 费/不得 proto 分/排除 asteroid）。
 - **AI 驱动永不卡死**：driveAI 全 try/catch + legal[0] 兜底；agent.decide 对任何合法行动集必须返回合法行动（safeScore）。
