@@ -178,11 +178,11 @@ export function ActionBar({
           ? `对手在附近建矿：你可充能 ${chargeOffer.amount} 能量（代价 ${chargeOffer.vpCost} 分）`
           : `等待对手响应充能邀约（${pending.queue.length} 人）…`;
       case 'itars-gaia':
-        return pending.player === seat ? '伊塔盖亚阶段：可弃 4 盖亚能量换科技板' : '等待伊塔盖亚阶段决策…';
+        return pending.player === seat ? '伊塔星人盖亚阶段：可弃 4 盖亚能量换科技板' : '等待伊塔星人盖亚阶段决策…';
       case 'terrans-gaia':
-        return pending.player === seat ? '地球人盖亚阶段：可把盖亚区能量兑换为资源' : '等待地球人盖亚阶段决策…';
+        return pending.player === seat ? '人类盖亚阶段：可把盖亚区能量兑换为资源' : '等待人类盖亚阶段决策…';
       case 'tinkering':
-        return pending.player === seat ? '修补匠：选择本轮修补板块' : '等待修补匠选板块…';
+        return pending.player === seat ? '焊修智械：选择本轮修补板块' : '等待焊修智械选板块…';
       case 'gain-tech-tile':
         return pending.player === seat ? '选择 1 块科技板' : '等待对手选择科技板…';
       case 'free-mine':

@@ -11,7 +11,7 @@
  * scale 由 ResizeObserver 按外壳实际渲染宽度动态计算（researchBoardScale），
  * 叠加相对坐标与点击热区随板面同步缩放，任何宽度下不失准。
  *
- * 回合计分/终局计分/助推器供应已拆为 RoundArc / FinalsProgress / BoostersStrip（v6 右栏与中央底条）。
+ * 回合计分/终局计分已迁 ScoreboardBoard（实图计分板）；助推器供应为 BoostersStrip（中央底条）。
  *
  * 交互：GameScreen 传入当前选择问题的字段（activeField/activeOptions），
  * 命中元素高亮并可点击（track/action/techTile/advTechTile 字段直接点板面）。
@@ -26,6 +26,7 @@ import {
   economyOverlayImage,
   federationTokenImage,
   markerImage,
+  QIC_COVER_IMAGE,
   techTileImage,
 } from '../assets';
 import type { CategoryId } from './interactions';
@@ -52,6 +53,7 @@ import {
   LEVEL_BOX_WIDTH,
   LEVEL_DOT_FRAC,
   LEVEL_DOT_STAGGER_FRAC,
+  QIC_COVER_RECT,
   TECH_TILE_ASPECT,
   TECH_STACK_OFFSET_PCT,
   TECH_STACK_WIDTH_PCT,
@@ -301,9 +303,28 @@ export function ResearchBoard({
           );
         })}
 
+        {/* LF：QIC 覆盖板盖住右下角 3 个绿水晶行动格（规则：引入飞船后绿水晶行动失效，
+            引擎侧 board-actions 已同步禁用；覆盖板同时印刷新改造项 proto/asteroid 说明） */}
+        {state.config.lostFleet === true ? (
+          <img
+            className="qic-cover overlay"
+            data-testid="qic-cover"
+            style={{
+              left: `${QIC_COVER_RECT.x0 * 100}%`,
+              top: `${QIC_COVER_RECT.y0 * 100}%`,
+              width: `${((QIC_COVER_RECT.x1 - QIC_COVER_RECT.x0) * 100).toFixed(2)}%`,
+              height: `${((QIC_COVER_RECT.y1 - QIC_COVER_RECT.y0) * 100).toFixed(2)}%`,
+            }}
+            src={QIC_COVER_IMAGE}
+            alt="QIC 覆盖板（失落舰队）"
+            title="失落舰队：绿水晶行动被覆盖失效"
+          />
+        ) : null}
+
         {/* power / qic 行动格（透明热区；已用叠 action token + 置灰）。
-            选择态内命中字段 → onPick；未在选择态但行动合法 → 直接点击发起（onBoardAction） */}
-        {BOARD_ACTION_ORDER.map((id) => {
+            选择态内命中字段 → onPick；未在选择态但行动合法 → 直接点击发起（onBoardAction）。
+            LF 下 qic 格被覆盖板盖住，不再渲染热区 */}
+        {BOARD_ACTION_ORDER.filter((id) => state.config.lostFleet !== true || !id.startsWith('qic')).map((id) => {
           const used = board.boardActionsUsed.includes(id);
           const categoryOk =
             (activeCategory === 'power' && id.startsWith('power')) ||
@@ -337,11 +358,13 @@ export function ResearchBoard({
 
       {/* 扩展区：联邦标记供应 */}
       <div className="rb-extension">
-        {/* 联邦标记供应（图）：单行放下，标记随数量等比缩小（fedTokenMaxWidth） */}
+        {/* 联邦标记供应（图）：单行放下，标记随数量等比缩小（fedTokenMaxWidth）；无文字标签 */}
         <div className="fed-supply" data-testid="fed-supply">
-          <span className="supply-label">联邦标记：</span>
           {(() => {
-            const supplied = (Object.entries(board.federationTokens) as [string, number][]).filter(([, n]) => n > 0);
+            // 格伦星人专属联邦片不在公共供应展示（实体上放在格伦星人族板 PI 上，PI 建成时获得）
+            const supplied = (Object.entries(board.federationTokens) as [string, number][]).filter(
+              ([id, n]) => n > 0 && id !== 'gleens',
+            );
             return supplied.map(([id, n]) => (
               <span
                 key={id}

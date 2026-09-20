@@ -116,7 +116,7 @@ const BUILDING_COLOR_FILE: Record<string, string> = {
 /** 近似色图需要的 hue-rotate 补偿（pink←red、turquoise←blue）。 */
 export const BUILDING_COLOR_FILTER: Record<string, string | undefined> = {
   pink: 'hue-rotate(-50deg) saturate(1.4)',
-  // 青色与兰提达蓝要有明显区分：往青绿方向多转一些
+  // 青色与亚特兰斯星人纯蓝要有明显区分：往青绿方向多转一些
   turquoise: 'hue-rotate(-65deg) saturate(1.3) brightness(1.05)',
 };
 
@@ -179,8 +179,24 @@ export function markerImage(name: string): string {
   return `${A}/markers/${name}.png`;
 }
 
+/** 种族飞船面板（LF 探索板整图，用户自拍抠图素材，factions/panels/<id>.png）。 */
+export function factionPanelImage(factionId: FactionId): string {
+  return `${A}/factions/panels/${factionId}.png`;
+}
+
 export const PAGE_BACKGROUND = `${A}/bg/background.jpg`;
 export const RESEARCH_BOARD_BG = `${A}/boards/ResearchBoard.jpg`;
+
+/** 计分板整图（用户自拍抠图，含外圈行星装饰）：标准局直接用，LF 局下方再接梯形扩展片。 */
+export const SCOREBOARD_BASE_IMAGE = `${A}/boards/scoreboard-base.png`;
+
+/** LF 计分板梯形扩展片（按 scoringExtension 选面：vp=25 胜点解锁 / ships=探索 3 船解锁）。 */
+export function scoreboardExtImage(face: 'vp' | 'ships'): string {
+  return `${A}/lf/scoreboard-ext-${face}.png`;
+}
+
+/** LF QIC 覆盖板（盖住科技轨右下角 3 个绿水晶行动格）。 */
+export const QIC_COVER_IMAGE = `${A}/lf/qic-cover.png`;
 
 // ---------------------------------------------------------------------------
 // 板块图（Etchelon 命名 → 引擎 id）
@@ -325,9 +341,9 @@ export function federationTokenImage(id: FederationTokenId): string {
 
 /** 船板整图（Twilight/TF-Mars 用 BGG 开箱高清正面照，平整无透视；Rebellion/Eclipse 用 feuerland 照片）。 */
 export const SHIP_BOARD_IMAGE: Record<ShipId, string> = {
-  twilight: `${A}/lf/ships/twilight_board_bgg9503665.png`,
+  twilight: `${A}/lf/ships/twilight_board_render.jpg`,
   rebellion: `${A}/lf/ships/rebellion_board_feuerland.jpg`,
-  tfmars: `${A}/lf/ships/tf-mars_board_bgg9503665.png`,
+  tfmars: `${A}/lf/ships/tfmars_board_render.jpg`,
   eclipse: `${A}/lf/ships/eclipse_board_feuerland.jpg`,
 };
 

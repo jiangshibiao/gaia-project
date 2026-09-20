@@ -362,10 +362,28 @@ select {
   overflow: hidden;
   /* 草图比例公式：顶栏高 4.5vh；族板宽取 15vw 与 2 块等高容纳的较小者
      （v7 两块布局较 v6 略收窄，让星图更宽）；
-     右栏宽取 27vw 与研究板+计分区同高的较小者 */
+     右栏宽 = 研究板(高1.073×宽) + 实图计分板(高0.981×宽，LF 再 +0.207×宽)
+     与 27vw 的较小者（15vh 为轨道下方联邦供应/计分表/内边距预留；
+     v11 起右栏整体再放大 1.25×——分母 2.05/2.26 → 1.64/1.81） */
   --top-h: 4.5vh;
-  --mat-w: min(20vw, calc((100vh - var(--top-h) - 4vh) / 2.6 / 0.727));
-  --rail-r-w: min(27vw, calc((100vh - var(--top-h) - 4vh) / 1.6));
+  --mat-w: calc(min(20vw, calc((100vh - var(--top-h) - 4vh) / 2.6 / 0.727)) * var(--ui-k) * 0.8);
+  --rail-r-w: min(27vw, calc((100vh - var(--top-h) - 15vh) / 1.64));
+  /* 宽屏（>1680px）时按 --ui-k 整体放大（解决大屏池内空隙大/片显小；mac 小屏 k=1 不变） */
+  --ui-k: clamp(1, calc(100vw / 1680px), 1.35);
+  /* 助推器片统一渲染高 = 个人版图高 ÷ 2（版图高 ≈ --mat-w × 0.727）：
+     版图右侧竖列 = 种族飞船面板（上）+ 当回合助推片（下）；助推器池共用同高 */
+  --booster-h: calc(var(--mat-w) * 0.727 / 2);
+  /* 科技片/高级片渲染宽 = 研究板同款片渲染宽（TECH_TILE_WIDTH/ADV_TILE_WIDTH × 板图渲染宽，
+     板图渲染宽 = 右栏宽 - 右栏 padding(0.6vh×2) - 研究板 padding(4px×2)） */
+  --rb-tile-w: calc((var(--rail-r-w) - 1.2vh - 8px) * 0.115);
+  --rb-adv-w: calc((var(--rail-r-w) - 1.2vh - 8px) * 0.1);
+  /* 种族飞船面板（版图正右方）占位宽：高 = --booster-h，宽 ≈ 高 × 面板纵横比（400/1240） */
+  --panel-w: calc(var(--booster-h) * 0.323);
+}
+
+.game-screen[data-lf='1'] {
+  /* LF 计分板多一块梯形扩展片（+0.207×宽 高），右栏相应收窄 */
+  --rail-r-w: min(27vw, calc((100vh - var(--top-h) - 15vh) / 1.81));
 }
 
 /* 顶栏：三段式（左区与左栏同宽、中区与星图对齐、右区与右栏同宽） */
@@ -390,6 +408,9 @@ select {
   align-items: center;
   gap: 0.5vw;
   min-width: 0;
+}
+.game-screen[data-lf='1'] .topbar-left {
+  width: calc(var(--mat-w) + var(--panel-w) + 1.2vh + 6px);
 }
 .topbar-center {
   flex: 1;
@@ -510,7 +531,8 @@ select {
   display: flex;
 }
 
-/* 左栏（v7 两块布局）：上 = 我的版图 + 科技/推进横条；下 = 对手版图（TAB 切换） */
+/* 左栏（v8 两块布局）：上 = 我的版图 + 科技/推进横条；下 = 对手版图（TAB 切换）
+   LF 时版图正右方多一块种族飞船面板（--panel-w），左栏相应加宽 */
 .rail-l {
   width: calc(var(--mat-w) + 1.2vh);
   flex: none;
@@ -520,6 +542,10 @@ select {
   flex-direction: column;
   gap: 0.6vh;
   overflow: hidden;
+}
+
+.game-screen[data-lf='1'] .rail-l {
+  width: calc(var(--mat-w) + var(--panel-w) + 1.2vh + 6px);
 }
 
 /* 上下两块均分左栏高度（内容垂直居中；版图 flex 自适应收缩） */
@@ -533,12 +559,12 @@ select {
   overflow: hidden;
 }
 
-/* 两块均分左栏高度：富余空间由科技/推进横条承接（不再聚到两块之间） */
+/* 两块均分左栏高度：科技/联邦片横条贴在版图下方（第一排，不沉底） */
 .rail-l .tech-booster-strip {
   flex: 1;
   min-height: 0;
-  align-content: flex-end;
-  align-items: flex-end;
+  align-content: flex-start;
+  align-items: flex-start;
 }
 
 /* 对手 TAB 细条：座位色小方块 + 昵称 + 当前行动者指示点 */
@@ -612,45 +638,41 @@ select {
   gap: 4px;
 }
 
+/* 科技片与研究板上的科技片完全同宽（高级片叠放见 tech-stack） */
 .tech-booster-strip .strip-tech .tile-img {
-  width: min(3.2vh, 30px);
+  width: var(--rb-tile-w);
 }
 
-.tech-booster-strip .strip-boosters {
-  flex: none;
-  margin-left: auto;
-  display: flex;
-  align-items: stretch;
+/* 联邦片与计分区联邦标记同宽（.fed-item .tile-img 的 34px） */
+.tech-booster-strip .strip-tech .tile-img.fed {
+  width: 34px;
 }
 
-.tech-booster-strip .strip-boosters .tile-img.booster {
-  width: auto;
-  height: min(9vh, 90px);
-  object-fit: contain;
-}
-
+/* 高级片叠放：默认与科技片同宽完全盖住被覆盖片；悬浮整叠时高级片向右大幅滑开露出被覆盖片 */
 .tech-booster-strip .tech-stack {
   position: relative;
   display: inline-block;
   flex: none;
-  width: min(4vh, 36px);
-  height: min(2.7vh, 24px);
+  width: var(--rb-tile-w);
 }
 
 .tech-booster-strip .tech-stack .covered {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: min(2.2vh, 20px);
+  display: block;
+  width: 100%;
   filter: grayscale(1);
   opacity: 0.55;
 }
 
 .tech-booster-strip .tech-stack .adv-top {
   position: absolute;
-  right: 0;
+  left: 0;
   top: 0;
-  width: min(2.9vh, 26px);
+  width: 100%;
+  transition: transform 0.15s ease-out;
+}
+
+.tech-booster-strip .tech-stack:hover .adv-top {
+  transform: translateX(85%);
 }
 
 .rail-l .player-mat {
@@ -725,6 +747,65 @@ select {
   flex-direction: column;
 }
 
+/* 行动确认/撤销条（星图左下浮层，事件日志上方避让） */
+.undo-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 1.2vh;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #101827e6;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: min(1.6vh, 12px);
+  white-space: nowrap;
+  box-shadow: 0 2px 10px #00000088;
+}
+
+.undo-delta {
+  color: var(--ink);
+}
+
+.undo-bar .undo-btn,
+.undo-bar .undo-dismiss {
+  font-size: min(1.5vh, 11px);
+  padding: 2px 10px;
+}
+
+/* 回放控制条（复盘，星图正上方） */
+.review-controls-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid #2a3a5f;
+  border-radius: 8px;
+  background: #101828;
+}
+.review-controls-bar button {
+  padding: 2px 8px;
+  font-size: min(1.8vh, 13px);
+}
+.review-controls-bar .review-speed.active {
+  border-color: var(--accent-warm);
+  color: var(--accent-warm);
+}
+.review-controls-bar input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.review-controls-bar .review-progress {
+  color: var(--ink-dim);
+  font-size: min(1.6vh, 12px);
+  white-space: nowrap;
+}
+
 /* 地图顶部浮动条（选择对话 / pending / setup 提示；不挡棋盘交互） */
 .map-top-overlay {
   position: absolute;
@@ -756,6 +837,8 @@ select {
   width: 60%;
   flex: none;
   min-width: 0;
+  /* 助推器池收紧后，舰队面板保持右对齐（空隙留在池与舰队之间） */
+  margin-left: auto;
 }
 
 .center-bottom .fleet-cards {
@@ -763,8 +846,9 @@ select {
   gap: 0.6vh;
 }
 
+/* 助推器池随内容收缩（不 flex 撑满）：池宽 = 片宽×数量 + 小间隙，中间星图因而更宽 */
 .boosters-strip {
-  flex: 1;
+  flex: none;
   min-width: 0;
   border: 1px solid #2a3a5f;
   border-radius: 8px;
@@ -781,16 +865,17 @@ select {
   text-align: center;
 }
 
+/* 池内推进片高度与个人横条统一（--booster-h）；片宽 = 图纵横比 102/298，间隙收紧 */
 .boosters-row {
   display: flex;
-  gap: 0.6vh;
-  flex: 1;
-  min-height: 0;
+  gap: 0.3vh;
+  flex: none;
+  height: var(--booster-h);
 }
 
 .booster-tile {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  width: calc(var(--booster-h) * 0.342 + 2px);
   padding: 0;
   background: #0b1220;
   border: 1px solid #2a3a5f;
@@ -799,6 +884,12 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* 池内未选取推进片是全彩的（禁用只是"非可点"语义；被拿走的另有 .taken 置灰） */
+.booster-tile:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
 .booster-tile img {
@@ -851,119 +942,135 @@ select {
   background: #101828;
 }
 
-/* 回合弧（仿实体计分板）：6 张回合计分图绕宽扁半圆外环 + 数字圆内环 + 中央装饰星球（环心） */
-.round-arc {
+/* 计分板（v8 实图版）：主板整图 + 叠加层；LF 下方再接梯形扩展片。
+   高度自适应：栈高 = min(栏宽推得高, flex 分得高)，富余空间留给下方常驻计分表 */
+.scoreboard-board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4vh;
+  overflow: hidden;
+}
+
+/* 主板+梯形片的纵向栈：LF 时高宽比 = 1600×(1570+439×0.567) */
+.sb-stack {
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: 1600 / 1570;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4vh;
+}
+.sb-stack.lf {
+  aspect-ratio: 1600 / 1902;
+}
+
+.sb-base {
   position: relative;
-  width: 100%;
-  aspect-ratio: 3.2;
   flex: none;
+  width: 100%;
+  aspect-ratio: 1600 / 1570;
 }
 
-.round-arc-planet {
-  position: absolute;
-  left: 50%;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #4a9a4a, #1a4a2a);
-  box-shadow: 0 0 14px #2a6a3a88;
+.sb-base-img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
-.round-arc-tile {
+.sb-round-tile {
   position: absolute;
-  aspect-ratio: 0.72;
   object-fit: contain;
-  border: 1px solid #2a3a5f;
-  border-radius: 4px;
-  transform: translate(-50%, -50%);
+  border-radius: 3px;
 }
 
-.round-arc-home {
-  position: absolute;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.round-arc-tile.cur {
-  outline: 3px solid #ffd700;
+.sb-round-tile.cur {
+  outline: 2.5px solid #ffd700;
   box-shadow: 0 0 10px #ffd700;
 }
 
-.round-arc-tile.past {
+.sb-round-tile.past {
   opacity: 0.35;
 }
 
-.round-arc-num {
+.sb-final-tile {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  border-radius: 3px;
+}
+
+/* 终局进度：绿轨上的玩家色圆点（领先者金圈；无布局面积，仅绝对定位子元素） */
+.finals-progress {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.sb-final-marker {
   position: absolute;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: #1c2a47;
-  border: 1px solid #4a6ea9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: min(1.4vh, 0.85vw);
+  border: 1.5px solid #000000aa;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 3px #000;
+  pointer-events: auto;
+}
+
+.sb-final-marker.lead {
+  border-color: #ffd700;
+  box-shadow: 0 0 6px #ffd700;
+}
+
+/* LF 梯形扩展片 + 第 7 高级板槽 */
+.sb-ext {
+  position: relative;
+  flex: none;
+  margin: 0 auto;
+}
+
+.sb-ext-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sb-ext .adv-extension {
+  position: absolute;
+  inset: 0;
+}
+
+.sb-ext .adv-slot {
+  position: absolute;
   transform: translate(-50%, -50%);
 }
 
-.round-arc-num.cur {
-  border-color: #ffd700;
-  color: #ffd700;
-}
-
-/* 终局实时进度：2 张终局板图 + 每家计数（领先金色标注） */
-.finals-progress {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: 0.6vh;
-}
-
-.final-item {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid #2a3a5f;
+.sb-ext .adv-slot.img {
+  padding: 0;
+  background: transparent;
+  border: 2px solid transparent;
   border-radius: 6px;
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
 }
 
-.final-img {
-  flex: 1;
-  min-height: 0;
-  background-size: contain;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-
-.final-prog {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px 8px;
-  justify-content: center;
-  font-size: min(1.3vh, 0.8vw);
-  color: #8fb0e0;
-}
-
-.final-name {
+.sb-ext .adv-slot.img .tile-img {
   width: 100%;
+  display: block;
+}
+
+.sb-ext .adv-slot.img.pickable {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px #58a6ff66;
+  cursor: pointer;
+}
+
+.sb-ext .adv-slot.empty {
+  color: var(--ink-dim);
+  font-size: 11px;
   text-align: center;
-}
-
-.final-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.final-count.lead,
-.final-count.lead b {
-  color: #ffd700;
 }
 
 .scoreboard-ext-row {
@@ -982,26 +1089,6 @@ select {
   justify-content: center;
   color: #8fb0e0;
   font-size: min(1.4vh, 0.85vw);
-}
-
-.score-toggle {
-  font-size: min(1.3vh, 0.8vw);
-  padding: 1px 8px;
-}
-
-/* 计分表弹层（计分区内向上弹出，不溢出页面） */
-.score-pop {
-  position: absolute;
-  left: 0.6vh;
-  right: 0.6vh;
-  bottom: calc(100% + 4px);
-  z-index: 30;
-  background: #101827f2;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  padding: 8px;
-  max-height: 40vh;
-  overflow-y: auto;
 }
 
 /* 玩家面板（族面板图头部 + 图标行） */
@@ -1158,6 +1245,39 @@ select {
   opacity: 0.9;
 }
 
+/* 格伦星人专属联邦片：叠放在 PI 槽位上（PI 建成时获得） */
+.mat-gleens-fed.overlay {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 4px #000);
+}
+
+/* PI 特殊行动热区（星际要塞原槽位；可用时金圈呼吸提示） */
+.mat-pi-hotzone.overlay {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px dashed #ffd70055;
+  padding: 0;
+  transform: translate(-50%, -50%);
+}
+.mat-pi-hotzone.available {
+  border-color: var(--accent-warm);
+  box-shadow: 0 0 10px #ffd70088;
+  cursor: pointer;
+  animation: pi-hotzone-pulse 1.6s ease-in-out infinite;
+}
+@keyframes pi-hotzone-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 4px #ffd70055;
+  }
+  50% {
+    box-shadow: 0 0 14px #ffd700cc;
+  }
+}
+
 .thinking-badge {
   font-size: 12px;
   color: var(--accent);
@@ -1293,9 +1413,10 @@ select {
   min-width: 0;
 }
 
+/* 船上金框联邦标记：固定 34px，与计分区联邦标记等大（原按船板图宽比例，各船大小不一） */
 .tile-img.fed.gold {
   border-color: var(--accent-warm);
-  width: 40px;
+  width: 34px;
 }
 
 .tile-img.artifact {
@@ -1311,6 +1432,17 @@ select {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+}
+
+/* 常驻右栏计分区（计分板正下方，不再展开/收起）：紧凑字号行距 */
+.scoreboard .score-table {
+  flex: none;
+  font-size: min(1.5vh, 0.78vw);
+  line-height: 1.25;
+}
+.scoreboard .score-table th,
+.scoreboard .score-table td {
+  padding: 0 4px;
 }
 
 .score-table th,
@@ -1644,6 +1776,13 @@ select {
   position: absolute;
 }
 
+/* LF QIC 覆盖板：精确铺满右下 QIC 盒（盒比≈2.46 vs 板图≈2.6，轻微拉伸贴合） */
+.qic-cover {
+  object-fit: fill;
+  border-radius: 4px;
+  box-shadow: 0 0 6px #000000aa;
+}
+
 .rb-track-zone {
   position: absolute;
   top: 0.5%;
@@ -1790,26 +1929,6 @@ select {
   align-items: center;
 }
 
-/* LF 计分板扩展条（计分区内，回合弧与终局板之间）：解锁条件图 + 第 7 高级板槽 */
-.adv-extension {
-  flex: none;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 4px;
-}
-
-.adv-extension .advcond-img {
-  width: 34px;
-  height: auto;
-  border-radius: 4px;
-}
-
-.adv-extension .adv-slot.img {
-  width: 46px;
-}
-
 .fed-supply {
   display: flex;
   flex-wrap: nowrap;
@@ -1845,6 +1964,36 @@ select {
   font-size: 11px;
   color: var(--ink-dim);
   flex: none;
+}
+
+/* 飞船大图浮层（非交互区悬浮 2 秒触发；宽 = 卡片 2 倍，半透明遮罩不挡死背景，点击关闭） */
+.ship-zoom-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #04070d99;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+.ship-zoom-img {
+  border-radius: 8px;
+  box-shadow: 0 0 30px #000;
+}
+
+/* 悬浮大图的船板容器（2 倍卡片宽；纯展示不响应指针） */
+.ship-zoom-content {
+  position: relative;
+  pointer-events: none;
+}
+.ship-zoom-content .ship-board-img {
+  border-radius: 8px;
+  box-shadow: 0 0 30px #000;
+}
+/* 大图内联邦片同步 2 倍（常规态固定 34px，否则与背后徽章格不匹配） */
+.ship-zoom-content .tile-img.fed.gold {
+  width: 68px;
 }
 
 /* 舰队面板（船板整图 + 相对坐标叠加） */
@@ -2420,88 +2569,69 @@ select {
   color: #d08080;
 }
 
-/* ---- 探索板（Lost Fleet 各族专属飞船面板，占位自绘版） ---- */
+/* ---- 版图右侧竖列：种族飞船面板（上）+ 当回合助推片（下，高 = 版图高 ÷ 2） ---- */
+.panel-booster-stack {
+  flex: none;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: var(--panel-w);
+  min-height: 0;
+}
 .exploration-board {
+  position: relative;
   flex: none;
-  width: fit-content;
-  max-width: 160px;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1.5px solid;
-  border-radius: 8px;
-  background: rgba(10, 16, 30, 0.82);
+  width: 100%;
 }
-.eb-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.eb-panel-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  box-shadow: 0 0 6px #00000088;
 }
-.eb-portrait {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1.5px solid;
-  object-fit: cover;
-  flex: none;
-}
-.eb-head-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.eb-title {
-  font-size: 13px;
-  font-weight: 700;
-}
-.eb-cost {
-  font-size: 11px;
-  color: var(--ink-dim);
-}
-.eb-adjust {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--ink);
-}
-.eb-shuttles {
-  display: flex;
-  gap: 8px;
-  margin-top: auto;
-}
+/* 穿梭机槽位叠加：绝对定位盖在面板印刷槽位上；已派遣留空（仅 tooltip） */
 .eb-shuttle {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  aspect-ratio: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
 }
 .eb-shuttle img {
-  width: 26px;
-  height: 26px;
+  width: 100%;
+  filter: drop-shadow(0 0 3px #000);
 }
-.eb-shuttle-ship {
-  font-size: 9px;
-  color: var(--ink-dim);
-  max-width: 52px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 竖列下方：当回合助推片（与助推器池同高 --booster-h = 版图高 ÷ 2） */
+.side-booster {
+  flex: none;
+  height: var(--booster-h);
+  width: auto;
+  object-fit: contain;
+  border-radius: 4px;
 }
 
-/* 左栏个人版图下方横条：探索板（左）+ 科技/推进/联邦片（右）；沉到 rail-mine 底部 */
+/* 版图 + 右侧竖列一行：版图保持原宽，竖列占新增的 --panel-w 宽度 */
+.rail-block-main {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rail-block-main .player-mat {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 左栏个人版图下方横条：科技/联邦片；紧跟版图（第一排在上，富余空间留在横条之下） */
 .rail-mine-bottom {
   display: flex;
   align-items: stretch;
   gap: 6px;
-  margin-top: auto;
-}
-.rail-mine-bottom .exploration-board {
-  flex: none;
-  width: auto;
-  min-width: 0;
 }
 .rail-mine-bottom .tech-booster-strip {
   flex: 1;

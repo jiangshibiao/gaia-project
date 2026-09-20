@@ -149,14 +149,16 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
     const { getByTestId, unmount } = render(<PlayerMat state={state} playerIdx={0} detailed />);
     // 探索板（LF）
     expect(getByTestId('exploration-board-0')).toBeInTheDocument();
-    // TechBoosterStrip：未被覆盖的标准板直出；被覆盖的 tech5 置灰垫高级板下；推进片实图
+    // TechBoosterStrip：未被覆盖的标准板直出；被覆盖的 tech5 置灰垫高级板下
     const strip = getByTestId('tech-booster-strip-0');
     expect(strip.querySelector('img[src*="TECtyp"]')).not.toBeNull();
     const stack = strip.querySelector('.tech-stack');
     expect(stack?.querySelector('img.covered')?.getAttribute('src')).toContain('TECore');
     expect(stack?.querySelector('img.adv-top')?.getAttribute('src')).toContain('ADVqic');
     expect(stack?.getAttribute('title')).toContain('覆盖');
-    expect(strip.querySelector('img.booster')?.getAttribute('src')).toContain('BOOter');
+    // 推进片已迁出版图右侧竖列（side-booster），不在横条内
+    expect(strip.querySelector('img.booster')).toBeNull();
+    expect(getByTestId('side-booster-0').getAttribute('src')).toContain('BOOter');
     unmount();
 
     // 空：TechBoosterStrip 不渲染（探索板仍在）

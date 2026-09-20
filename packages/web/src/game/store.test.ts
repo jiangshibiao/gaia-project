@@ -568,7 +568,7 @@ describe('GameStore 导入复盘（import_game → 复盘模式）', () => {
       legalActions: [],
     });
     const s = store.getState();
-    expect(s.review).toEqual({ record, step: 0, playing: false, speed: 1 });
+    expect(s.review).toEqual({ record, step: 0, playing: false, speed: 1, viewSeat: 0 });
     expect(s.snapshot).toBeNull();
     expect(s.legalActions).toEqual([]);
     expect(s.lastError).toBeNull();

@@ -14,7 +14,7 @@ import type { ReactElement } from 'react';
 import type { Action, GameState, PlayerIndex } from '@gaia/engine';
 import { actorOf } from '@gaia/protocol';
 import type { FilteredState } from '@gaia/protocol';
-import { conversionLabel, factionName, roundScoringName } from './display';
+import { conversionLabel, factionName } from './display';
 import { availableCategories, findResponse } from './interactions';
 import type { CategoryId } from './interactions';
 
@@ -74,7 +74,6 @@ export function TopActionBar({
   const actor = actorOf(state as GameState);
   const myTurn = actor === seat;
   const available = myTurn ? new Set(availableCategories(legalActions).map((c) => c.id)) : new Set<CategoryId>();
-  const roundTile = state.board.roundScoring[state.round - 1];
 
   // 免费兑换/烧脑下拉（仅轮到我且存在时有点击意义）
   const freeConversions = legalActions.filter(
@@ -130,12 +129,6 @@ export function TopActionBar({
       </div>
 
       <div className="topbar-center">
-        {roundTile !== undefined && state.phase !== 'setup' ? (
-          <span className="topbar-item" title="本轮回合计分板">
-            本轮：{roundScoringName(roundTile)}
-          </span>
-        ) : null}
-
         <div className="topbar-actions" data-testid="topbar-actions">
           {MAIN_CATEGORIES.map((id) => {
             const labels: Record<string, string> = {

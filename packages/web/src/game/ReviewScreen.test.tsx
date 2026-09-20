@@ -148,6 +148,39 @@ describe('<ReviewScreen> 复盘回放', () => {
     expect(store.getState().review?.step).toBe(1);
   });
 
+  it('左栏与对局同构：视角座位版图在上 + 对手 TAB 在下，「视角⇄」轮换第一视角', () => {
+    const { store } = setupStore();
+    renderReview(store, recordFixture());
+    // 上块 = 视角座位（默认 0）版图；下块 = 对手 TAB
+    expect(screen.getByTestId('rail-mine').querySelector('[data-testid="player-mat-0"]')).not.toBeNull();
+    expect(screen.getByTestId('rail-opponents').querySelector('[data-testid="player-mat-1"]')).not.toBeNull();
+    // 切换第一视角 → 上块换成玩家 1
+    fireEvent.click(screen.getByTestId('cycle-view-seat-0'));
+    expect(store.getState().review?.viewSeat).toBe(1);
+    expect(screen.getByTestId('rail-mine').querySelector('[data-testid="player-mat-1"]')).not.toBeNull();
+    expect(screen.getByTestId('rail-opponents').querySelector('[data-testid="player-mat-0"]')).not.toBeNull();
+    // 再切回玩家 0
+    fireEvent.click(screen.getByTestId('cycle-view-seat-1'));
+    expect(store.getState().review?.viewSeat).toBe(0);
+  });
+
+  it('「此处开始对局」：把 record 截断到当前步发 branch_game 并退出复盘', () => {
+    const { store } = setupStore();
+    const record = recordFixture();
+    renderReview(store, record);
+    const ws = lastWs();
+    // 前进到第 3 步
+    fireEvent.click(screen.getByTestId('review-next'));
+    fireEvent.click(screen.getByTestId('review-next'));
+    fireEvent.click(screen.getByTestId('review-next'));
+    fireEvent.click(screen.getByTestId('review-start-here'));
+    expect(store.getState().review).toBeNull();
+    const sent = ws.lastSent() as { type: string; record?: { actions: unknown[] }; seat?: number };
+    expect(sent.type).toBe('branch_game');
+    expect(sent.record?.actions).toHaveLength(3);
+    expect(sent.seat).toBe(0);
+  });
+
   it('退出复盘回大厅', () => {
     const { store } = setupStore();
     renderReview(store, recordFixture());

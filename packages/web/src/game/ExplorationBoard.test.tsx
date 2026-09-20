@@ -1,7 +1,8 @@
 /**
- * ExplorationBoard 渲染契约：
- * - lostFleet=false 时不渲染；lostFleet=true 时渲染族肖像/族名/派遣费/调整文本/穿梭机位；
- * - baltaks 派遣费 7 VP，其余 5 VP；穿梭机位 = 2 人局 2 个、3-4 人局 3 个。
+ * ExplorationBoard 渲染契约（实图版种族飞船面板）：
+ * - lostFleet=false 时不渲染；lostFleet=true 时渲染面板整图（factions/panels/<id>.png）；
+ * - 派遣费以 data-cost 暴露（baltaks 7，其余 5）；穿梭机位 = 2 人局 2 个、3-4 人局 3 个；
+ * - 已派遣的穿梭机位留空（used），未派遣显示穿梭机图。
  */
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -9,6 +10,7 @@ import { newGame } from '@gaia/engine';
 import type { FactionId } from '@gaia/engine';
 import { filterStateFor } from '@gaia/protocol';
 import type { FilteredState } from '@gaia/protocol';
+import { factionPanelImage } from '../assets';
 import { ExplorationBoard } from './ExplorationBoard';
 
 function fixture(factions: FactionId[], lostFleet: boolean): FilteredState {
@@ -24,25 +26,29 @@ describe('<ExplorationBoard> 渲染契约', () => {
     expect(container.querySelector('.exploration-board')).toBeNull();
   });
 
-  it('lostFleet=true 时渲染族名/费用/穿梭机位（terrans 5 VP，2 人局 2 个）', () => {
+  it('lostFleet=true 时渲染面板整图 + 穿梭机位（2 人局 2 个）', () => {
     const state = fixture(['terrans', 'xenos'], true);
-    const { getByTestId, getAllByTestId, container } = render(<ExplorationBoard state={state} seat={0} />);
+    const { getByTestId, getAllByTestId } = render(<ExplorationBoard state={state} seat={0} />);
     const board = getByTestId('exploration-board-0');
-    expect(board.textContent).toContain('地球人');
-    expect(board.textContent).toContain('派遣穿梭机：5 VP');
+    expect(board.getAttribute('data-cost')).toBe('5');
+    const img = board.querySelector<HTMLImageElement>('img.eb-panel-img');
+    expect(img?.src).toContain(factionPanelImage('terrans'));
     expect(getAllByTestId(/^eb-shuttle-0-/).length).toBe(2);
-    expect(container.querySelectorAll('.eb-adjust').length).toBe(1);
   });
 
-  it('baltaks 派遣费 7 VP', () => {
+  it('baltaks 派遣费 7（data-cost）', () => {
     const state = fixture(['baltaks', 'xenos'], true);
     const { getByTestId } = render(<ExplorationBoard state={state} seat={0} />);
-    expect(getByTestId('exploration-board-0').textContent).toContain('派遣穿梭机：7 VP');
+    expect(getByTestId('exploration-board-0').getAttribute('data-cost')).toBe('7');
   });
 
-  it('3-4 人局 3 个穿梭机位', () => {
+  it('3-4 人局 3 个穿梭机位；已派遣的留空（used）', () => {
     const state = fixture(['terrans', 'xenos', 'geodens'], true);
-    const { getAllByTestId } = render(<ExplorationBoard state={state} seat={0} />);
+    state.players[0]!.shuttles.push({ ship: 'twilight', slot: 0 });
+    const { getAllByTestId, getByTestId } = render(<ExplorationBoard state={state} seat={0} />);
     expect(getAllByTestId(/^eb-shuttle-0-/).length).toBe(3);
+    expect(getByTestId('eb-shuttle-0-0').className).toContain('used');
+    expect(getByTestId('eb-shuttle-0-0').querySelector('img')).toBeNull();
+    expect(getByTestId('eb-shuttle-0-1').querySelector('img')).not.toBeNull();
   });
 });

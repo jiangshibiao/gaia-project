@@ -21,7 +21,6 @@ import {
   BUILDING_COLOR_FILTER,
   advTechTileImage,
   artifactImage,
-  boosterImage,
   buildingImage,
   factionImage,
   federationTokenImage,
@@ -40,7 +39,6 @@ import type { RelPoint } from './research-calibration';
 import {
   advTechTileName,
   artifactName,
-  boosterName,
   factionName,
   federationTokenName,
   playerColor,
@@ -48,17 +46,9 @@ import {
   techTileName,
   trackName,
 } from './display';
-import { ExplorationBoard } from './ExplorationBoard';
+import { PanelBoosterStack } from './ExplorationBoard';
 
 const TRACK_ORDER: readonly ResearchTrack[] = ['terra', 'nav', 'int', 'gaia', 'eco', 'sci'];
-const TRACK_SHORT: Record<ResearchTrack, string> = {
-  terra: '地',
-  nav: '航',
-  int: '智',
-  gaia: '盖',
-  eco: '经',
-  sci: '科',
-};
 
 const SUPPLY_ORDER: readonly (keyof BuildingSupply)[] = ['mine', 'ts', 'lab', 'pi', 'ac1', 'ac2'];
 const SUPPLY_NAME: Record<string, string> = {
@@ -114,11 +104,17 @@ export interface PlayerMatProps {
   detailed?: boolean;
   /** 点击打开详情（仅紧凑模式渲染入口）。 */
   onShowDetail?: ((player: PlayerIndex) => void) | undefined;
+  /** 复盘第一视角切换（仅复盘传入；渲染在详情按钮前，点击轮换视角座位）。 */
+  onCycleViewSeat?: (() => void) | undefined;
   /** 收入轨建筑拖拽源（仅自己的面板且轮到自己时传入；pointerdown 发起拖拽）。 */
   onBuildingDragStart?: ((b: keyof BuildingSupply, e: React.PointerEvent<HTMLImageElement>) => void) | undefined;
+  /** 星际要塞特殊行动可用（自己回合且 legalActions 含 special-action）。 */
+  specialAvailable?: boolean | undefined;
+  /** 点击星际要塞（PI 热区）→ 与「特殊行动」按钮同效。 */
+  onSpecialAction?: (() => void) | undefined;
 }
 
-export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, detailed, onShowDetail, onBuildingDragStart }: PlayerMatProps): ReactElement | null {
+export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, detailed, onShowDetail, onCycleViewSeat, onBuildingDragStart, specialAvailable, onSpecialAction }: PlayerMatProps): ReactElement | null {
   const p = state.players[playerIdx];
   const [imgBroken, setImgBroken] = useState(false);
   if (p === undefined) return null;
@@ -161,6 +157,17 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
           </span>
         ) : null}
         {passed ? <span className="passed-badge">已 Pass</span> : null}
+        {onCycleViewSeat !== undefined && detailed !== true ? (
+          <button
+            type="button"
+            className="btn-ghost mat-detail-btn"
+            data-testid={`cycle-view-seat-${playerIdx}`}
+            title="切换复盘第一视角（轮换至下一位玩家）"
+            onClick={onCycleViewSeat}
+          >
+            视角⇄
+          </button>
+        ) : null}
         {onShowDetail !== undefined && detailed !== true ? (
           <button
             type="button"
@@ -177,7 +184,7 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
       {legacy ? (
         <LegacyBoard p={p} playerIdx={playerIdx} color={def.color} />
       ) : (
-        <FactionBoard p={p} playerIdx={playerIdx} faction={p.faction} color={def.color} onImgError={() => setImgBroken(true)} onBuildingDragStart={onBuildingDragStart} />
+        <FactionBoard p={p} playerIdx={playerIdx} faction={p.faction} color={def.color} onImgError={() => setImgBroken(true)} gleensTokenAvailable={p.faction === 'gleens' && (state.board.federationTokens['gleens'] ?? 0) > 0} onBuildingDragStart={onBuildingDragStart} specialAvailable={specialAvailable} onSpecialAction={onSpecialAction} />
       )}
 
       <div className="mat-resources" data-testid={`resources-${playerIdx}`}>
@@ -201,20 +208,14 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
         <span className="mat-research-inline">
           {TRACK_ORDER.map((t) => (
             <span key={t} className={`research-pip level-${p.research[t]}`} title={`${trackName(t)} L${p.research[t]}`}>
-              {TRACK_SHORT[t]}
               {p.research[t]}
             </span>
           ))}
         </span>
       </div>
 
-      {p.shuttles.length > 0 || p.artifacts.length > 0 ? (
+      {p.artifacts.length > 0 ? (
         <div className="mat-row mat-lf">
-          {p.shuttles.map((sh) => (
-            <span key={`${sh.ship}-${sh.slot}`} className="lf-chip" title={`${shipName(sh.ship)} ${sh.slot + 1} 号位`}>
-              穿梭机·{shipName(sh.ship)}
-            </span>
-          ))}
           {p.artifacts.map((a) => (
             <img key={a.id} className="tile-img sm artifact" src={artifactImage(a.id)} alt={artifactName(a.id)} title={artifactName(a.id)} />
           ))}
@@ -223,8 +224,8 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
 
       {detailed === true ? (
         <div className="mat-detail-strip">
-          <ExplorationBoard state={state} seat={playerIdx} />
           <TechBoosterStrip state={state} playerIdx={playerIdx} />
+          <PanelBoosterStack state={state} seat={playerIdx} />
         </div>
       ) : null}
     </section>
@@ -232,16 +233,16 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
 }
 
 /**
- * 科技板（含高级板/覆盖叠放，可两行）+ 推进片（右对齐满高）横条：
- * 左栏版图下方展示，与详情弹窗 mat-detail-sections 共享覆盖/叠放逻辑。
- * 三者皆空时不渲染（不占纵向空间）。
+ * 科技/高级（覆盖叠放）/联邦片混排横条（按获得时间序）：
+ * 左栏版图下方展示，与详情弹窗共享覆盖/叠放逻辑；推进片已迁出版图右侧竖列
+ * （PanelBoosterStack：种族飞船面板 + 当回合助推片）。三者皆空时不渲染。
  */
 export function TechBoosterStrip({ state, playerIdx }: { state: FilteredState; playerIdx: PlayerIndex }): ReactElement | null {
   const p = state.players[playerIdx];
   if (p === undefined) return null;
   const covered = new Set(p.advTechTiles.map((t) => t.covers));
   const uncoveredTech = p.techTiles.filter((t) => !covered.has(t));
-  if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.booster === null && p.federationTokens.length === 0) return null;
+  if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.federationTokens.length === 0) return null;
   /** 按获得时间混排（acquisitions 为空/缺失时回退：科技→高级→联邦的分组序）。 */
   const acqs = p.acquisitions ?? [];
   const items =
@@ -300,11 +301,6 @@ export function TechBoosterStrip({ state, playerIdx }: { state: FilteredState; p
           );
         })}
       </div>
-      {p.booster !== null ? (
-        <div className="strip-boosters">
-          <img className="tile-img booster" src={boosterImage(p.booster)} alt={boosterName(p.booster)} title={boosterName(p.booster)} />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -316,14 +312,23 @@ function FactionBoard({
   faction,
   color,
   onImgError,
+  gleensTokenAvailable,
   onBuildingDragStart,
+  specialAvailable,
+  onSpecialAction,
 }: {
   p: PlayerState;
   playerIdx: PlayerIndex;
   faction: FactionId;
   color: string;
   onImgError: () => void;
+  /** 格伦星人专属联邦片仍在供应（未解锁）时 true：叠放在 PI 槽位上。 */
+  gleensTokenAvailable?: boolean | undefined;
   onBuildingDragStart?: ((b: keyof BuildingSupply, e: React.PointerEvent<HTMLImageElement>) => void) | undefined;
+  /** 自己回合且特殊行动合法时为 true（PI 热区高亮可点）。 */
+  specialAvailable?: boolean | undefined;
+  /** 点击星际要塞（PI 热区）→ 与「特殊行动」按钮同效。 */
+  onSpecialAction?: (() => void) | undefined;
 }): ReactElement {
   const cal = factionCalibration(faction);
   const filter = BUILDING_COLOR_FILTER[color];
@@ -432,6 +437,32 @@ function FactionBoard({
           />
         ));
       })}
+
+      {/* 格伦星人专属联邦片：放在 PI 槽位上（PI 建成时获得；实体版即印于格伦星人族板） */}
+      {gleensTokenAvailable === true ? (
+        <img
+          className="mat-gleens-fed overlay"
+          style={{ ...at(cal.piSlot), width: `${(BUILDING_SPRITE.pi.width * 0.9 * 100).toFixed(2)}%` }}
+          src={federationTokenImage('gleens')}
+          alt="格伦星人专属联邦片"
+          title="格伦星人专属联邦片：PI 建成时获得"
+          data-testid={`mat-gleens-fed-${playerIdx}`}
+        />
+      ) : null}
+
+      {/* 星际要塞（PI）特殊行动热区：PI 已建成（面板剩余 0）时出现在原槽位，
+          自己回合且特殊行动合法 → 高亮可点（与「特殊行动」按钮同效） */}
+      {p.buildings.pi === 0 && onSpecialAction !== undefined ? (
+        <button
+          type="button"
+          className={`mat-pi-hotzone overlay${specialAvailable === true ? ' available' : ''}`}
+          style={{ ...at(cal.piSlot), width: `${(BUILDING_SPRITE.pi.width * 100).toFixed(2)}%` }}
+          data-testid={`mat-pi-action-${playerIdx}`}
+          disabled={specialAvailable !== true}
+          title={specialAvailable === true ? '星际要塞特殊行动（同特殊行动按钮）' : '星际要塞特殊行动（当前不可用）'}
+          onClick={() => onSpecialAction()}
+        />
+      ) : null}
 
       {/* gaiaformer：可用占槽（左→右）；baltaks 暂存 gaia 区的叠在 gaia 区旁 */}
       {Array.from({ length: p.gaiaformers.available }, (_, i) =>

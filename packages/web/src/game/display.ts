@@ -42,24 +42,25 @@ import type { FilteredState } from '@gaia/protocol';
 // 种族与玩家色
 // ---------------------------------------------------------------------------
 
+/** 种族中文名（BGA 官方中文帮助文档/桌游圈/发行方商品文案多源一致的标准译名）。 */
 export const FACTION_ZH: Record<FactionId, string> = {
-  terrans: '地球人',
-  lantids: '兰提达',
-  xenos: '泽诺斯',
-  gleens: '格林斯',
-  taklons: '塔克隆',
-  ambas: '安巴斯',
-  'hadsch-hallas': '哈德什·哈拉斯',
-  ivits: '伊维特',
-  geodens: '吉欧登',
-  baltaks: '巴尔塔克',
-  firaks: '菲拉克',
-  bescods: '贝斯科德',
-  nevlas: '内夫拉',
-  itars: '伊塔',
-  tinkeroids: '修补匠',
-  darkanians: '达卡尼亚',
-  moweyds: '莫维德',
+  terrans: '人类',
+  lantids: '亚特兰斯星人',
+  xenos: '异空族',
+  gleens: '格伦星人',
+  taklons: '利爪族',
+  ambas: '大使星人',
+  'hadsch-hallas': '圣禽族',
+  ivits: '蜂人',
+  geodens: '晶矿星人',
+  baltaks: '炽炎族',
+  firaks: '章鱼人',
+  bescods: '疯狂机器',
+  nevlas: '超星人',
+  itars: '伊塔星人',
+  tinkeroids: '焊修智械',
+  darkanians: '暗黑星人',
+  moweyds: '莫维兹星人',
   'space-giants': '太空巨人',
 };
 
@@ -261,13 +262,13 @@ export const SPECIAL_ACTION_ZH: Record<SpecialActionId, string> = {
   booster5: '建矿/盖亚计划 射程+3（助推器）',
   boosterlf4: '免费立即盖亚计划（助推器）',
   ac2: 'QIC 学院：+1Q',
-  'ivits-sp': '放置空间站（伊维特）',
-  'ambas-swap': '交换 PI 与矿井（安巴斯）',
-  'firaks-down': '实验室降级推进研究（菲拉克）',
-  'bescods-up': '推进最低研究轨（贝斯科德）',
-  'gleens-range': '射程 +2（格林斯探索板）',
-  'moweyds-ring': '放置能量环（莫维德）',
-  'tinkeroids-tile': '使用本轮修补板块（修补匠）',
+  'ivits-sp': '放置空间站（蜂人）',
+  'ambas-swap': '交换 PI 与矿井（大使星人）',
+  'firaks-down': '实验室降级推进研究（章鱼人）',
+  'bescods-up': '推进最低研究轨（疯狂机器）',
+  'gleens-range': '射程 +2（格伦星人探索板）',
+  'moweyds-ring': '放置能量环（莫维兹星人）',
+  'tinkeroids-tile': '使用本轮修补板块（焊修智械）',
   'space-giants-mine': '建矿（2 免费步，太空巨人）',
 };
 
@@ -377,10 +378,10 @@ export function describeAction(action: Action): string {
       return '放弃充能';
     case 'itars-gaia-tech':
       return action.techTile !== null
-        ? `伊塔盖亚阶段：弃 4 能拿板「${techTileName(action.techTile)}」`
-        : '伊塔盖亚阶段：结束';
+        ? `伊塔星人盖亚阶段：弃 4 能拿板「${techTileName(action.techTile)}」`
+        : '伊塔星人盖亚阶段：结束';
     case 'terrans-gaia-done':
-      return '地球人盖亚阶段：结束兑换';
+      return '人类盖亚阶段：结束兑换';
     case 'choose-tinkering':
       return `选择修补板块「${tinkeringName(action.tile)}」`;
     case 'gain-tech-tile':

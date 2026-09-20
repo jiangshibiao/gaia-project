@@ -12,8 +12,8 @@
  *   （FleetPanel，v7 右移）；pending/setup/选择对话为地图顶部浮动条（ActionBar）；
  *   事件日志为地图左下角可折叠浮层；
  * - 右栏：上 = 研究轨道整图（ResearchBoard，ResizeObserver 动态 scale）；
- *   下 = 计分区（RoundArc 回合弧 + AdvExtension LF 第 7 高级板槽 +
- *   FinalsProgress 终局实时进度 + 回合/先手一行 + 计分表弹层）。
+ *   下 = 计分区（ScoreboardBoard 实图计分板：回合计分片入扇形槽 + 终局片入灰面板槽
+ *   + 绿轨计数点 + LF 梯形扩展片/第 7 高级板槽；下方常驻计分表 ScoreTable）。
  *
  * 选择状态机协作（不变）：
  * - 本组件持有 selection（interactions.Selection），新快照（seq 变化）自动清空；
@@ -33,15 +33,13 @@ import { BUILDING_COLOR_FILTER, buildingImage } from '../assets';
 import { BoardSvg } from '../board/BoardSvg';
 import type { BoardSvgHandle } from '../board/BoardSvg';
 import { ActionBar } from './ActionBar';
-import { AdvExtension } from './AdvExtension';
 import { BoostersStrip } from './BoostersStrip';
-import { FinalsProgress } from './FinalsProgress';
 import { FleetPanel } from './FleetPanel';
 import { LeftRail } from './LeftRail';
 import { PlayerMat } from './PlayerMat';
 import { ResearchBoard } from './ResearchBoard';
-import { RoundArc } from './RoundArc';
 import { ScoreTable } from './ScoreTable';
+import { ScoreboardBoard } from './ScoreboardBoard';
 import { TopActionBar } from './TopActionBar';
 import { describeAction, factionName, finalScoringName } from './display';
 
@@ -92,7 +90,6 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [detailPlayer, setDetailPlayer] = useState<PlayerIndex | null>(null);
   const [logOpen, setLogOpen] = useState(false);
-  const [scoreOpen, setScoreOpen] = useState(false);
   const [overDismissed, setOverDismissed] = useState(false);
 
   // 面板建筑拖拽（建矿/升级）：pointerdown 发起（plan 随拖随定），
@@ -107,6 +104,27 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     setSelection(null);
   }, [s.seq]);
 
+  // ---- 行动确认/撤销条 ----
+  // 回合起点检查点：actor 变为我（pending 为空、非终局）时记录当时状态；
+  // 此后我的每次提交都让 seq 超过检查点 → 底部浮条显示本回合资源/VP 增量，
+  // [完成] 收起（下次提交再出现）、[撤销回合] 发 undo（服务端截断重放，状态还原）。
+  const [turnCheckpoint, setTurnCheckpoint] = useState<{ seq: number; state: FilteredState } | null>(null);
+  const [undoDismissedAt, setUndoDismissedAt] = useState<number | null>(null);
+  const prevActorRef = useRef<PlayerIndex | null>(null);
+  useEffect(() => {
+    if (state === null || seat === null) return;
+    const cur = actorOf(state as GameState);
+    if (cur !== seat) {
+      prevActorRef.current = cur;
+      return;
+    }
+    if (state.pending === null && state.phase !== 'game-over' && prevActorRef.current !== seat) {
+      setTurnCheckpoint({ seq: s.seq, state });
+      setUndoDismissedAt(null);
+    }
+    prevActorRef.current = cur;
+  }, [s.seq, seat, state]);
+
   const nicknames = useMemo(
     () => s.room?.seats.map((info) => info?.nickname) ?? [],
     [s.room],
@@ -116,6 +134,27 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     return <main className="app game-screen">等待对局数据…</main>;
   }
   const actor = actorOf(state as GameState);
+
+  // 撤销条可见性与增量（检查点之后有提交且未被[完成]暂时收起）
+  const meNow = state.players[seat];
+  const meThen = turnCheckpoint?.state.players[seat];
+  const undoBarVisible =
+    turnCheckpoint !== null &&
+    meNow !== undefined &&
+    meThen !== undefined &&
+    s.seq > turnCheckpoint.seq &&
+    (undoDismissedAt === null || s.seq > undoDismissedAt);
+  const undoDelta: [string, number][] = [];
+  if (undoBarVisible && meNow !== undefined && meThen !== undefined) {
+    const diff = (label: string, cur: number, old: number): void => {
+      if (cur !== old) undoDelta.push([label, cur - old]);
+    };
+    diff('矿', meNow.resources.ore, meThen.resources.ore);
+    diff('钱', meNow.resources.credits, meThen.resources.credits);
+    diff('知', meNow.resources.knowledge, meThen.resources.knowledge);
+    diff('Q', meNow.resources.qic, meThen.resources.qic);
+    diff('VP', meNow.vp, meThen.vp);
+  }
 
   const question = selection !== null ? currentQuestion(selection) : null;
   // 拖拽中：高亮 = 拖拽合法落点；否则 = 选择机的 hex 问题目标
@@ -232,7 +271,7 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
   const gameOver = s.gameOver;
 
   return (
-    <main className="app game-screen" data-testid="game-screen">
+    <main className="app game-screen" data-testid="game-screen" data-lf={state.config.lostFleet === true ? '1' : '0'}>
       <TopActionBar
         state={state}
         legalActions={s.legalActions}
@@ -263,11 +302,27 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
           thinkingSeats={s.thinkingSeats}
           onShowDetail={(p) => setDetailPlayer(p)}
           onBuildingDragStart={actor === seat ? onBuildingDragStart : undefined}
+          specialAvailable={actor === seat && s.legalActions.some((a) => a.type === 'special-action')}
+          onSpecialAction={() => onStartSelection('special')}
         />
 
         {/* 中央：星图 + 底部横条（舰队 2×2 + 助推器池） */}
         <section className="center-panel">
           <div className="map-area">
+            {/* 行动确认/撤销条：本回合每次提交后浮出（增量实时计算） */}
+            {undoBarVisible ? (
+              <div className="undo-bar" data-testid="undo-bar">
+                <span className="undo-delta" data-testid="undo-delta">
+                  本回合：{undoDelta.length > 0 ? undoDelta.map(([l, d]) => `${l}${d > 0 ? '+' : ''}${d}`).join(' ') : '无变化'}
+                </span>
+                <button type="button" className="btn-primary undo-btn" data-testid="undo-turn" onClick={() => store.undo()}>
+                  撤销回合
+                </button>
+                <button type="button" className="btn-ghost undo-dismiss" data-testid="undo-dismiss" onClick={() => setUndoDismissedAt(s.seq)}>
+                  完成
+                </button>
+              </div>
+            ) : null}
             <BoardSvg
               ref={boardRef}
               state={state}
@@ -344,29 +399,15 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
             onBoardAction={onBoardAction}
           />
           <div className="scoreboard" data-testid="scoreboard">
-            <RoundArc state={state} />
-            <div className="scoreboard-ext-row">
-              <AdvExtension
-                state={state}
-                activeField={question?.field.key ?? null}
-                activeOptions={activeOptions}
-                onPick={applyPick}
-              />
-              <button
-                type="button"
-                className="btn-ghost score-toggle"
-                data-testid="score-toggle"
-                onClick={() => setScoreOpen((v) => !v)}
-              >
-                计分表 {scoreOpen ? '▴' : '▾'}
-              </button>
-            </div>
-            <FinalsProgress state={state} nicknames={nicknames} seat={seat} />
-            {scoreOpen ? (
-              <div className="score-pop" data-testid="score-pop">
-                <ScoreTable state={state} nicknames={nicknames} thinkingSeats={s.thinkingSeats} seat={seat} />
-              </div>
-            ) : null}
+            <ScoreboardBoard
+              state={state}
+              nicknames={nicknames}
+              seat={seat}
+              activeField={question?.field.key ?? null}
+              activeOptions={activeOptions}
+              onPick={applyPick}
+            />
+            <ScoreTable state={state} nicknames={nicknames} thinkingSeats={s.thinkingSeats} seat={seat} />
           </div>
         </aside>
       </div>

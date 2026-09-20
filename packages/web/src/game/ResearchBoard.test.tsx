@@ -140,9 +140,12 @@ describe('<ResearchBoard> 整图渲染契约', () => {
     expect(imgs.length).toBeGreaterThan(0);
   });
 
-  it('联邦标记供应单行放下：fed-item maxWidth = (可用宽 − 固定间隙) ÷ 种数', () => {
+  it('联邦标记供应单行放下（格伦专属片除外）：fed-item maxWidth = (可用宽 − 固定间隙) ÷ 种数', () => {
     const state = fixture(true);
-    const supplied = (Object.entries(state.board.federationTokens) as [string, number][]).filter(([, n]) => n > 0);
+    // 格伦星人专属联邦片不在公共供应展示（叠放在格伦星人族板 PI 上）
+    const supplied = (Object.entries(state.board.federationTokens) as [string, number][]).filter(
+      ([id, n]) => n > 0 && id !== 'gleens',
+    );
     expect(supplied.length).toBeGreaterThan(0);
     const { getByTestId } = render(<ResearchBoard state={state} />);
     const items = getByTestId('fed-supply').querySelectorAll<HTMLElement>('.fed-item');

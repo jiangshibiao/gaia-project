@@ -2,8 +2,8 @@
  * GameScreen v7 布局契约测试：
  * - 顶栏（行动按钮组在顶栏）+ 左栏两块（我的版图+科技/推进横条 / 对手版图 TAB）
  *   + 中央星图 + 右研究/计分栏；
- * - 右栏计分区：RoundArc（当前轮金框高亮）+ AdvExtension（LF 第 7 高级板槽）
- *   + FinalsProgress + 回合/先手一行；
+ * - 右栏计分区：ScoreboardBoard 实图计分板（当前轮金框高亮）+ LF 第 7 高级板槽
+ *   + 绿轨终局计数点 + 计分表弹层；
  * - 中央底部：左助推器池 + 右舰队 2×2（v7 舰队右移）；
  * - 旧底部栏（「研究 · 舰队」tab / 时代标记条）整体移除；
  * - 计分表并入右栏计分区（弹层）；事件日志为地图左下角可折叠浮层；
@@ -68,7 +68,7 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(railR.querySelector('[data-testid="research-board"]')).not.toBeNull();
     const scoreboard = railR.querySelector('[data-testid="scoreboard"]');
     expect(scoreboard).not.toBeNull();
-    expect(railR.querySelector('[data-testid="round-arc"]')).not.toBeNull();
+    expect(railR.querySelector('[data-testid="scoreboard-board"]')).not.toBeNull();
     expect(railR.querySelector('[data-testid="finals-progress"]')).not.toBeNull();
     // LF 第 7 高级板槽在计分区扩展条（不在研究板上）；回合/先手信息已下线
     expect(scoreboard?.querySelector('[data-testid="adv-extension"]')).not.toBeNull();
@@ -132,7 +132,7 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(railL.querySelector('[data-testid="player-mat-1"]')).not.toBeNull();
   });
 
-  it('我的版图下方：科技板/推进片实图小横条（含高级板覆盖叠放）', () => {
+  it('我的版图下方：科技/联邦片实图小横条（含高级板覆盖叠放）；推进片在右侧竖列', () => {
     const { store } = setupStore();
     render(<App store={store} />);
     const ws = lastWs();
@@ -157,10 +157,11 @@ describe('<GameScreen> v6 布局契约', () => {
     const mine = screen.getByTestId('rail-mine');
     const strip = mine.querySelector('[data-testid="tech-booster-strip-0"]');
     expect(strip).not.toBeNull();
-    // 未被覆盖的 tech2 + 高级板叠放（tech5 置灰垫下）+ 推进片
-    expect(strip?.querySelectorAll('img').length).toBeGreaterThanOrEqual(4);
+    // 未被覆盖的 tech2 + 高级板叠放（tech5 置灰垫下）；推进片在版图右侧竖列
+    expect(strip?.querySelectorAll('img').length).toBeGreaterThanOrEqual(3);
     expect(strip?.querySelector('.tech-stack .covered')).not.toBeNull();
     expect(strip?.querySelector('.tech-stack .adv-top')).not.toBeNull();
+    expect(mine.querySelector('[data-testid="side-booster-0"]')).not.toBeNull();
     // 对手块不渲染该横条
     expect(screen.getByTestId('rail-opponents').querySelector('.tech-booster-strip')).toBeNull();
   });
@@ -178,7 +179,7 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(screen.getByTestId('leave-game')).toBeInTheDocument();
   });
 
-  it('RoundArc 当前轮高亮（进入第 1 轮后 tile-1 金框）', () => {
+  it('ScoreboardBoard 当前轮高亮（进入第 1 轮后 tile-1 金框）', () => {
     const { store } = setupStore();
     const ws = renderInGame(store);
     // setup（round=0）：无当前轮、无置灰
@@ -198,7 +199,39 @@ describe('<GameScreen> v6 布局契约', () => {
     });
     expect(screen.getByTestId('round-arc-tile-1').className).toContain('cur');
     expect(screen.getByTestId('round-arc-tile-2').className).not.toContain('past');
-    expect(screen.getByTestId('round-arc-num-1')).toHaveTextContent('1');
+  });
+
+  it('行动确认/撤销条：提交后浮出（增量实时计算），撤销发 undo，完成暂时收起', () => {
+    const { store } = setupStore();
+    const ws = renderInGame(store);
+    // setup 快照（seq 1）已设回合检查点（actor=seat 0）
+    expect(screen.queryByTestId('undo-bar')).toBeNull();
+    // 推 seq 2：我的资源/VP 已变化、行动权交给 seat 1 → 浮条出现
+    const game = gameFixture();
+    const s2 = filterStateFor(game);
+    s2.players[0]!.resources.ore -= 2;
+    s2.players[0]!.vp += 5;
+    s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+    });
+    const bar = screen.getByTestId('undo-bar');
+    expect(bar).toBeInTheDocument();
+    expect(screen.getByTestId('undo-delta').textContent).toContain('矿-2');
+    expect(screen.getByTestId('undo-delta').textContent).toContain('VP+5');
+    // 撤销 → 发送 undo
+    fireEvent.click(screen.getByTestId('undo-turn'));
+    expect(ws.lastSent()).toEqual({ type: 'undo', protocolVersion: PROTOCOL_VERSION, token: 'tok-me' });
+    // 完成 → 收起；推 seq 3 再次提交 → 重新出现
+    fireEvent.click(screen.getByTestId('undo-dismiss'));
+    expect(screen.queryByTestId('undo-bar')).toBeNull();
+    const s3 = filterStateFor(game);
+    s3.players[0]!.resources.credits -= 1;
+    s3.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 3, state: s3, legalActions: [] });
+    });
+    expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
   });
 
   it('旧底部栏整体移除（无 tab / 合并面板 / 时代标记条）', () => {
@@ -219,14 +252,12 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(screen.getByTestId('boosters-strip')).toBeInTheDocument();
   });
 
-  it('计分表并入右栏计分区：toggle 打开/关闭弹层', () => {
+  it('计分表常驻挂在右栏计分区（无展开/收起交互）', () => {
     const { store } = setupStore();
     renderInGame(store);
-    expect(screen.queryByTestId('score-pop')).toBeNull();
-    fireEvent.click(screen.getByTestId('score-toggle'));
-    expect(screen.getByTestId('score-pop')).toBeInTheDocument();
-    expect(screen.getByTestId('score-table')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('score-toggle'));
+    const scoreboard = screen.getByTestId('scoreboard');
+    expect(scoreboard.querySelector('[data-testid="score-table"]')).not.toBeNull();
+    expect(screen.queryByTestId('score-toggle')).toBeNull();
     expect(screen.queryByTestId('score-pop')).toBeNull();
   });
 

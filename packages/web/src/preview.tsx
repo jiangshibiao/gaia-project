@@ -13,14 +13,12 @@ import { applyAction, enumerateActions, newGame } from '@gaia/engine';
 import type { Action, FactionId } from '@gaia/engine';
 import { actorOf, filterStateFor } from '@gaia/protocol';
 import { BoardSvg } from './board/BoardSvg';
-import { AdvExtension } from './game/AdvExtension';
 import { BoostersStrip } from './game/BoostersStrip';
-import { FinalsProgress } from './game/FinalsProgress';
 import { FleetPanel } from './game/FleetPanel';
 import { GameScreen } from './game/GameScreen';
 import { PlayerMat } from './game/PlayerMat';
 import { ResearchBoard } from './game/ResearchBoard';
-import { RoundArc } from './game/RoundArc';
+import { ScoreboardBoard } from './game/ScoreboardBoard';
 import type { GameStore, GameStoreState } from './game/store';
 import './style.css';
 
@@ -33,10 +31,14 @@ const state = filterStateFor(
   }),
 );
 
-// 构造有内容的画面：穿梭机、已用行动格、爬轨、L5 占用。
+// 构造有内容的画面：穿梭机、已用行动格、爬轨、L5 占用；Twilight 放 2 个圣器（目视圣器尺寸）。
 for (const ship of state.board.ships) {
   ship.shuttleSlots[0] = 0;
   ship.shuttleSlots[2] = 1;
+}
+{
+  const twilight = state.board.ships.find((s) => s.id === 'twilight');
+  if (twilight !== undefined) twilight.artifacts.push({ id: 'art-1k1o' }, { id: 'art-3k1q' });
 }
 state.board.shipActionsUsed.push(`${state.board.ships[0]!.id}:${'ship-rescore-fed'}`);
 state.board.shipActionsUsed.push('eclipse:ship-vp-per-planet');
@@ -248,9 +250,7 @@ function App() {
           <BoostersStrip state={state} />
         </div>
         <div style={{ width: '24vw', flex: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <RoundArc state={state} />
-          <AdvExtension state={state} />
-          <FinalsProgress state={state} nicknames={[]} seat={0} />
+          <ScoreboardBoard state={state} nicknames={[]} seat={0} />
         </div>
       </div>
       <h2>中央地图（滚轮缩放 / 拖拽平移 / 双击复位）</h2>

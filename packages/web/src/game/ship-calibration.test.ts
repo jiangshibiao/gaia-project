@@ -28,7 +28,7 @@ describe('ship-calibration 结构', () => {
       for (const p of cal.shuttleSlots) expectPoint(p);
       for (const p of cal.actionSpaces) expectPoint(p);
       expectPoint(cal.fedToken);
-      for (const key of ['shuttleSize', 'actionSize', 'actionTokenSize', 'techWidth', 'fedWidth', 'artifactWidth'] as const) {
+      for (const key of ['shuttleSize', 'actionSize', 'actionTokenSize', 'techWidth', 'artifactWidth'] as const) {
         expect(cal[key], `${id}.${key}`).toBeGreaterThan(0);
         expect(cal[key], `${id}.${key}`).toBeLessThan(1);
       }
@@ -53,24 +53,24 @@ describe('ship-calibration 结构', () => {
     }
   });
 
-  it('tfmars 按 BGG 开箱正面照（2865×929）标定：左列 4 穿梭机位 + 中上 3 行动格 + 右侧科技槽/中下徽章', () => {
+  it('tfmars 按 TTS 官方渲染（3411×1050）标定：左列 4 穿梭机位 + 中上 3 行动格 + 右侧科技槽/中下徽章', () => {
     const cal = SHIP_CALIBRATION.tfmars;
-    expect(cal.width).toBe(2865);
-    expect(cal.height).toBe(929);
-    // 探索轨：左竖列自上而下（x≈0.232 恒定，y 递增）
-    for (const p of cal.shuttleSlots) expect(p.x).toBeCloseTo(0.232, 2);
+    expect(cal.width).toBe(3411);
+    expect(cal.height).toBe(1050);
+    // 探索轨：左竖列自上而下（x≈0.22 恒定，y 递增）
+    for (const p of cal.shuttleSlots) expect(p.x).toBeCloseTo(0.22, 2);
     expect(cal.shuttleSlots.map((p) => p.y)).toEqual([
-      expect.closeTo(0.21, 2),
-      expect.closeTo(0.39, 2),
-      expect.closeTo(0.565, 2),
-      expect.closeTo(0.743, 2),
+      expect.closeTo(0.244, 2),
+      expect.closeTo(0.455, 2),
+      expect.closeTo(0.633, 2),
+      expect.closeTo(0.82, 2),
     ]);
     // 3 个六边形行动格：中上部左→右（绿/粉/黄）
-    expect(cal.actionSpaces[0]).toEqual({ x: expect.closeTo(0.382, 2), y: expect.closeTo(0.339, 2) });
-    expect(cal.actionSpaces[1]).toEqual({ x: expect.closeTo(0.494, 2), y: expect.closeTo(0.334, 2) });
-    expect(cal.actionSpaces[2]).toEqual({ x: expect.closeTo(0.604, 2), y: expect.closeTo(0.328, 2) });
-    // 科技板槽在右侧大屏幕面板，联邦标记槽盖在中下印刷的徽章上
-    expect(cal.techSlot).toEqual({ x: expect.closeTo(0.806, 2), y: expect.closeTo(0.431, 2) });
-    expect(cal.fedToken).toEqual({ x: expect.closeTo(0.684, 2), y: expect.closeTo(0.689, 2) });
+    expect(cal.actionSpaces[0]).toEqual({ x: expect.closeTo(0.3725, 2), y: expect.closeTo(0.398, 2) });
+    expect(cal.actionSpaces[1]).toEqual({ x: expect.closeTo(0.4875, 2), y: expect.closeTo(0.39, 2) });
+    expect(cal.actionSpaces[2]).toEqual({ x: expect.closeTo(0.605, 2), y: expect.closeTo(0.382, 2) });
+    // 科技板槽在右侧屏幕面板，联邦标记槽盖在中下印刷的徽章上
+    expect(cal.techSlot).toEqual({ x: expect.closeTo(0.852, 2), y: expect.closeTo(0.454, 2) });
+    expect(cal.fedToken).toEqual({ x: expect.closeTo(0.685, 2), y: expect.closeTo(0.755, 2) });
   });
 });

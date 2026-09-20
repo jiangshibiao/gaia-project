@@ -45,11 +45,13 @@ export const TRACK_COLUMN_X: Record<ResearchTrack, number> = {
 /** 各等级格中心 y（L0 起始格在底部）。 */
 export const TRACK_LEVEL_Y: readonly number[] = [0.543, 0.462, 0.391, 0.281, 0.213, 0.043];
 
-/** 轨道内标准科技板槽中心 y（x 取所在轨列中心）。 */
-export const TRACK_TECH_Y = 0.127;
+/** 轨道内标准科技板槽中心 y（x 取所在轨列中心）。
+ *  注意（v9 修正，与实体板一致）：标准板槽在中部面板行，顶部行是高级板槽。 */
+export const TRACK_TECH_Y = 0.653;
 
-/** 高级科技板槽中心 y（x 取所在轨列中心；槽 i 对齐 TRACK_ORDER[i]）。 */
-export const ADV_TECH_Y = 0.653;
+/** 高级科技板槽中心 y（x 取所在轨列中心；槽 i 对齐 TRACK_ORDER[i]）。
+ *  实体板上高级科技片放在科技轨最上方（每轨顶一格），不是中部。 */
+export const ADV_TECH_Y = 0.127;
 
 /** 自由标准科技板槽（free1..3）中心。 */
 export const FREE_TECH_SLOTS: readonly RelPoint[] = [
@@ -138,3 +140,6 @@ export const ACTION_TOKEN_SIZE = 0.034;
 export const L5_FED_WIDTH = 0.045;
 /** 经济覆盖板宽度（相对图宽）。 */
 export const ECON_OVERLAY_WIDTH = 0.1;
+
+/** LF QIC 覆盖板矩形（盖住右下角 3 个绿水晶行动格的印刷盒；相对坐标，按 ResearchBoard.jpg 实测）。 */
+export const QIC_COVER_RECT = { x0: 0.63, y0: 0.86, x1: 1.0, y1: 1.0 } as const;

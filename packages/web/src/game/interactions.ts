@@ -67,8 +67,8 @@ export type CategoryId =
   | 'setup-mine' // 放起始矿
   | 'setup-booster' // 选起始助推器
   // 以下为 pending 响应类别
-  | 'itars-tech' // 伊塔盖亚阶段拿板
-  | 'tinkering' // 修补匠选板块
+  | 'itars-tech' // 伊塔星人盖亚阶段拿板
+  | 'tinkering' // 焊修智械选板块
   | 'gain-tech' // gain-tech-tile 响应
   | 'free-mine'; // 免费建矿响应
 

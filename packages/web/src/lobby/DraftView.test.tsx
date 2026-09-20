@@ -62,7 +62,7 @@ describe('<DraftView>', () => {
     // 18 族格（lostFleet=true）
     expect(screen.getByTestId('draft-faction-terrans')).toBeInTheDocument();
     expect(screen.getByTestId('draft-faction-space-giants')).toBeInTheDocument();
-    expect(screen.getByTestId('draft-faction-terrans')).toHaveTextContent('地球人');
+    expect(screen.getByTestId('draft-faction-terrans')).toHaveTextContent('人类');
     // 等待大厅的座位面板不再显示
     expect(screen.queryByTestId('start-game')).not.toBeInTheDocument();
   });
@@ -145,8 +145,8 @@ describe('<DraftView>', () => {
       }),
     );
     expect(screen.getByTestId('draft-turn-hint')).toHaveTextContent('全员就绪');
-    expect(screen.getByTestId('draft-pick-0')).toHaveTextContent('甲：地球人');
-    expect(screen.getByTestId('draft-pick-1')).toHaveTextContent('乙：泽诺斯');
+    expect(screen.getByTestId('draft-pick-0')).toHaveTextContent('甲：人类');
+    expect(screen.getByTestId('draft-pick-1')).toHaveTextContent('乙：异空族');
     fireEvent.click(screen.getByTestId('draft-confirm'));
     expect(ws.lastSent()).toEqual({ type: 'draft_confirm', protocolVersion: PROTOCOL_VERSION, token: 'tok-me' });
   });

@@ -43,7 +43,7 @@ describe('<FleetPanel> 渲染契约', () => {
     }
   });
 
-  it('船板整图作背景（Twilight/TF-Mars 用 BGG 开箱高清正面照）', () => {
+  it('船板整图作背景（Twilight/TF-Mars 用 TTS 官方黑底渲染）', () => {
     const state = fixture();
     const { container } = render(
       <FleetPanel state={state} seat={0} legalActions={[]} onShipAction={() => {}} onExplore={() => {}} />,
@@ -53,8 +53,8 @@ describe('<FleetPanel> 渲染契约', () => {
       const img = card.querySelector<HTMLImageElement>('img.ship-board-img');
       expect(img?.src).toContain(SHIP_BOARD_IMAGE[ship.id]);
     }
-    expect(SHIP_BOARD_IMAGE.twilight).toContain('twilight_board_bgg9503665.png');
-    expect(SHIP_BOARD_IMAGE.tfmars).toContain('tf-mars_board_bgg9503665.png');
+    expect(SHIP_BOARD_IMAGE.twilight).toContain('twilight_board_render.jpg');
+    expect(SHIP_BOARD_IMAGE.tfmars).toContain('tfmars_board_render.jpg');
     // 每船 4 个穿梭机位叠加（空位显示空圈）
     expect(container.querySelectorAll('.ship-slot .slot-empty').length).toBe(state.board.ships.length * 4);
   });

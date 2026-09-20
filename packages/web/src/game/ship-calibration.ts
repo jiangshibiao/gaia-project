@@ -11,6 +11,8 @@
  * - artifacts：Twilight 的 4 个神器位（2×2 白色椭圆槽，其余船 null）。
  *
  * 各 size 为相对图宽的直径/边长（叠加元素按 width% 缩放，纵横比随图保持）。
+ * 例外：金框联邦标记不按图宽比例——固定 34px（.tile-img.fed.gold），
+ * 与计分区联邦标记等大，fedToken 仅提供槽位中心。
  *
  * 注意：twilight 与 tfmars 已换 BGG 西班牙版开箱高清正面照
  * （twilight 2865×936 / tf-mars 2865×929，平整无透视，解决旧渲染图模糊投诉），
@@ -40,43 +42,41 @@ export interface ShipCalibration {
   actionTokenSize: number;
   /** 科技板图宽度（相对图宽）。 */
   techWidth: number;
-  /** 联邦标记图宽度（相对图宽）。 */
-  fedWidth: number;
   /** 神器图宽度（相对图宽）。 */
   artifactWidth: number;
 }
 
 export const SHIP_CALIBRATION: Record<ShipId, ShipCalibration> = {
   twilight: {
-    // BGG 开箱正面照（2865×936）：左竖列 4 穿梭机位，中上 3 六边形行动格
-    // （绿/粉/蓝），中下徽章 = 联邦标记槽，右侧 2×2 灰色椭圆 = 神器位
-    width: 2865,
-    height: 936,
+    // TTS 模组官方渲染（3411×1050，黑底，与 feuerland 版同美术系列；源 URL 见 assets README）：
+    // 左竖列 4 穿梭机位，中上 3 六边形行动格（绿/粉/蓝），中下徽章 = 联邦标记槽，
+    // 右侧 2×2 椭圆 = 圣器位（X 印刷圆 = 圣器盖，叠加直接盖其上）
+    width: 3411,
+    height: 1050,
     shuttleSlots: [
-      { x: 0.233, y: 0.221 },
-      { x: 0.233, y: 0.409 },
-      { x: 0.233, y: 0.59 },
-      { x: 0.232, y: 0.742 },
+      { x: 0.228, y: 0.235 },
+      { x: 0.228, y: 0.463 },
+      { x: 0.228, y: 0.641 },
+      { x: 0.228, y: 0.82 },
     ],
     actionSpaces: [
-      { x: 0.326, y: 0.47 },
-      { x: 0.44, y: 0.459 },
-      { x: 0.551, y: 0.454 },
+      { x: 0.33, y: 0.52 },
+      { x: 0.4425, y: 0.52 },
+      { x: 0.5525, y: 0.52 },
     ],
     techSlot: null,
-    fedToken: { x: 0.608, y: 0.748 },
+    fedToken: { x: 0.6125, y: 0.763 },
     artifacts: [
-      { x: 0.744, y: 0.24 },
-      { x: 0.904, y: 0.289 },
-      { x: 0.743, y: 0.662 },
-      { x: 0.905, y: 0.641 },
+      { x: 0.75, y: 0.252 },
+      { x: 0.91, y: 0.252 },
+      { x: 0.75, y: 0.69 },
+      { x: 0.91, y: 0.69 },
     ],
-    shuttleSize: 0.058,
+    shuttleSize: 0.055,
     actionSize: 0.095,
     actionTokenSize: 0.045,
-    techWidth: 0.16,
-    fedWidth: 0.07,
-    artifactWidth: 0.05,
+    techWidth: 0.15,
+    artifactWidth: 0.1,
   },
   rebellion: {
     width: 2000,
@@ -92,41 +92,39 @@ export const SHIP_CALIBRATION: Record<ShipId, ShipCalibration> = {
       { x: 0.47, y: 0.58 },
       { x: 0.578, y: 0.572 },
     ],
-    techSlot: { x: 0.83, y: 0.499 },
+    techSlot: { x: 0.8575, y: 0.483 },
     fedToken: { x: 0.668, y: 0.628 },
     artifacts: null,
     shuttleSize: 0.03,
     actionSize: 0.055,
     actionTokenSize: 0.026,
-    techWidth: 0.09,
-    fedWidth: 0.042,
+    techWidth: 0.15,
     artifactWidth: 0.035,
   },
   tfmars: {
-    // BGG 开箱正面照（2865×929，比透视校正版更平更清）：左竖列 4 穿梭机位，
-    // 中上 3 六边形行动格（绿/粉/黄），右侧大屏幕面板为科技板槽，
+    // TTS 模组官方渲染（3411×1050，黑底；源 URL 见 assets README）：左竖列 4 穿梭机位，
+    // 中上 3 六边形行动格（绿/粉/黄），右侧屏幕面板为科技板槽（槽位印在其面板右列），
     // 中下徽章 = 联邦标记槽（叠加直接盖其上）
-    width: 2865,
-    height: 929,
+    width: 3411,
+    height: 1050,
     shuttleSlots: [
-      { x: 0.232, y: 0.21 },
-      { x: 0.232, y: 0.39 },
-      { x: 0.232, y: 0.565 },
-      { x: 0.232, y: 0.743 },
+      { x: 0.22, y: 0.244 },
+      { x: 0.22, y: 0.455 },
+      { x: 0.22, y: 0.633 },
+      { x: 0.22, y: 0.82 },
     ],
     actionSpaces: [
-      { x: 0.382, y: 0.339 },
-      { x: 0.494, y: 0.334 },
-      { x: 0.604, y: 0.328 },
+      { x: 0.3725, y: 0.398 },
+      { x: 0.4875, y: 0.39 },
+      { x: 0.605, y: 0.382 },
     ],
-    techSlot: { x: 0.806, y: 0.431 },
-    fedToken: { x: 0.684, y: 0.689 },
+    techSlot: { x: 0.852, y: 0.454 },
+    fedToken: { x: 0.685, y: 0.755 },
     artifacts: null,
     shuttleSize: 0.055,
     actionSize: 0.095,
     actionTokenSize: 0.045,
     techWidth: 0.15,
-    fedWidth: 0.09,
     artifactWidth: 0.07,
   },
   eclipse: {
@@ -143,14 +141,13 @@ export const SHIP_CALIBRATION: Record<ShipId, ShipCalibration> = {
       { x: 0.513, y: 0.451 },
       { x: 0.628, y: 0.445 },
     ],
-    techSlot: { x: 0.798, y: 0.35 },
+    techSlot: { x: 0.8235, y: 0.342 },
     fedToken: { x: 0.685, y: 0.7 },
     artifacts: null,
     shuttleSize: 0.03,
     actionSize: 0.055,
     actionTokenSize: 0.026,
-    techWidth: 0.09,
-    fedWidth: 0.042,
+    techWidth: 0.15,
     artifactWidth: 0.035,
   },
 };

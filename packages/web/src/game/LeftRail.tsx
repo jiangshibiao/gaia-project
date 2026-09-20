@@ -1,8 +1,8 @@
 /**
- * 左栏（v7 两块布局）：
- * - 上块 = 我自己的版图（PlayerMat 放大）+ 下方科技板/推进片实图小横条
- *   （TechBoosterStrip，与详情弹窗同类展示共享逻辑）；
- * - 下块 = 其他玩家版图：>1 个对手时顶部一条 TAB 细条（座位色小方块 + 昵称，
+ * 左栏（v8 两块布局）：
+ * - 上块 = 我自己的版图（PlayerMat）+ 正右方种族飞船面板（ExplorationBoard 实图，
+ *   LF 限定）+ 下方科技板/推进片实图小横条（TechBoosterStrip，与详情弹窗共享逻辑）；
+ * - 下块 = 其他玩家版图同款组合：>1 个对手时顶部一条 TAB 细条（座位色小方块 + 昵称，
  *   当前行动者带指示点），点击切换下方 PlayerMat；默认选中第一个对手；
  *   2 人局唯一对手不渲染 TAB 直接显示。
  * 当前行动者高亮、详情弹窗入口、拖拽建矿（仅自己面板且轮到自己）保持不变。
@@ -12,7 +12,7 @@ import type { ReactElement } from 'react';
 import type { BuildingSupply, PlayerIndex } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
 import { playerColor } from './display';
-import { ExplorationBoard } from './ExplorationBoard';
+import { PanelBoosterStack } from './ExplorationBoard';
 import { PlayerMat, TechBoosterStrip } from './PlayerMat';
 
 export interface LeftRailProps {
@@ -25,9 +25,15 @@ export interface LeftRailProps {
   onShowDetail: (player: PlayerIndex) => void;
   /** 拖拽建矿源（仅自己面板且轮到自己时由 GameScreen 传入）。 */
   onBuildingDragStart?: ((b: keyof BuildingSupply, e: React.PointerEvent<HTMLImageElement>) => void) | undefined;
+  /** 星际要塞特殊行动可用（自己回合且 legalActions 含 special-action）。 */
+  specialAvailable?: boolean | undefined;
+  /** 点击星际要塞（PI 热区）→ 与「特殊行动」按钮同效（仅自己面板传入）。 */
+  onSpecialAction?: (() => void) | undefined;
+  /** 复盘第一视角切换（仅复盘传入；渲染在我的版图详情按钮前）。 */
+  onCycleViewSeat?: (() => void) | undefined;
 }
 
-export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowDetail, onBuildingDragStart }: LeftRailProps): ReactElement {
+export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowDetail, onBuildingDragStart, specialAvailable, onSpecialAction, onCycleViewSeat }: LeftRailProps): ReactElement {
   const opponents = state.players.map((_, i) => i).filter((i) => i !== seat);
   // null = 未手动选择 → 默认第一个对手；座位数/座位变化导致选中失效时同样回退
   const [oppTab, setOppTab] = useState<PlayerIndex | null>(null);
@@ -35,20 +41,25 @@ export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowD
 
   return (
     <aside className="rail-l" data-testid="rail-l">
-      {/* 上块：我的版图 + 科技/推进小横条 */}
+      {/* 上块：我的版图（右侧贴种族飞船面板）+ 科技/推进小横条 */}
       <div className="rail-block" data-testid="rail-mine">
-        <PlayerMat
-          state={state}
-          playerIdx={seat}
-          nickname={nicknames[seat]}
-          isMe
-          thinking={thinkingSeats.includes(seat)}
-          active={actor === seat}
-          onShowDetail={onShowDetail}
-          onBuildingDragStart={actor === seat ? onBuildingDragStart : undefined}
-        />
+        <div className="rail-block-main">
+          <PlayerMat
+            state={state}
+            playerIdx={seat}
+            nickname={nicknames[seat]}
+            isMe
+            thinking={thinkingSeats.includes(seat)}
+            active={actor === seat}
+            onShowDetail={onShowDetail}
+            onCycleViewSeat={onCycleViewSeat}
+            onBuildingDragStart={actor === seat ? onBuildingDragStart : undefined}
+            specialAvailable={specialAvailable}
+            onSpecialAction={actor === seat ? onSpecialAction : undefined}
+          />
+          <PanelBoosterStack state={state} seat={seat} />
+        </div>
         <div className="rail-mine-bottom">
-          <ExplorationBoard state={state} seat={seat} />
           <TechBoosterStrip state={state} playerIdx={seat} />
         </div>
       </div>
@@ -75,16 +86,18 @@ export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowD
               ))}
             </div>
           ) : null}
-          <PlayerMat
-            state={state}
-            playerIdx={selected}
-            nickname={nicknames[selected]}
-            thinking={thinkingSeats.includes(selected)}
-            active={actor === selected}
-            onShowDetail={onShowDetail}
-          />
+          <div className="rail-block-main">
+            <PlayerMat
+              state={state}
+              playerIdx={selected}
+              nickname={nicknames[selected]}
+              thinking={thinkingSeats.includes(selected)}
+              active={actor === selected}
+              onShowDetail={onShowDetail}
+            />
+            <PanelBoosterStack state={state} seat={selected} />
+          </div>
           <div className="rail-mine-bottom">
-            <ExplorationBoard state={state} seat={selected} />
             <TechBoosterStrip state={state} playerIdx={selected} />
           </div>
         </div>

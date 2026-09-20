@@ -1,15 +1,14 @@
 /**
- * 复盘回放画面：导入对局记录后的全屏只读对局，**行动栏/操作按钮全部换成回放控制条**。
+ * 复盘回放画面：导入对局记录后的全屏只读对局，**布局与对局同构**（左栏视角座位
+ * 版图 + 对手 TAB / 中央星图 / 右研究计分栏），行动栏/操作按钮换成回放控制。
  *
- * 布局复用 GameScreen 的三栏只读部分（PlayerMat / BoardSvg / FleetPanel /
- * BoostersStrip / ResearchBoard / RoundArc / AdvExtension / FinalsProgress /
- * ScoreTable），全部以回放状态渲染：不接选择机、无拖拽、无高亮、无行动按钮。
- *
- * - 顶栏 = 回放控制条：⏮ 开头 / ◀ 上一步（长按连退）/ 播放·暂停 / ▶ 下一步
- *   （长按连播）/ ⏭ 结尾 / 速度 1×2×4× / 可拖进度条 + 步数 / 退出复盘；
- * - 行动栏区域（地图顶部浮动条）= 当前步行动描述与行动者（复用 display.ts
- *   的 describeAction）；
- * - 状态机：store.review（step/playing/speed），本地 newGame(config) + 前 step 条
+ * - 顶栏 = 左区（标题 + 第 x/6 轮 + 「此处开始对局」残局分支）+ 右区（轮到 + 退出复盘，
+ *   位置与对局「离开房间」对齐）；
+ * - 回放控制条（⏮/◀/播放·暂停/▶/⏭/速度 1×2×4×/可拖进度条 + 步数）置于星图正上方
+ *   （center-panel 顶部）；当前步行动描述保留为地图顶部浮动条；
+ * - 第一视角座位（review.viewSeat）：左栏上块为其版图，详情按钮前「视角⇄」轮换；
+ *   「此处开始对局」把 record 截断到当前步发 branch_game（其余座位 AI 托管）；
+ * - 状态机：store.review（step/playing/speed/viewSeat），本地 newGame(config) + 前 step 条
  *   applyAction 重放（replay.ts）；连播由本组件定时器驱动 store.reviewTick()，
  *   拖进度条 = setReviewStep 从头重放到目标步；重放失败显示错误并停止。
  */
@@ -18,14 +17,13 @@ import type { ReactElement } from 'react';
 import type { GameState, PlayerIndex } from '@gaia/engine';
 import { actorOf, filterStateFor } from '@gaia/protocol';
 import { BoardSvg } from '../board/BoardSvg';
-import { AdvExtension } from './AdvExtension';
 import { BoostersStrip } from './BoostersStrip';
-import { FinalsProgress } from './FinalsProgress';
 import { FleetPanel } from './FleetPanel';
+import { LeftRail } from './LeftRail';
 import { PlayerMat } from './PlayerMat';
 import { ResearchBoard } from './ResearchBoard';
-import { RoundArc } from './RoundArc';
 import { ScoreTable } from './ScoreTable';
+import { ScoreboardBoard } from './ScoreboardBoard';
 import { describeAction, factionName } from './display';
 import { replayFrame } from './replay';
 import { useGameStore } from './store';
@@ -71,7 +69,6 @@ function useHoldRepeat(action: () => void): {
 export function ReviewScreen({ store }: { store: GameStore }): ReactElement {
   const review = useGameStore(store).review;
   const [detailPlayer, setDetailPlayer] = useState<PlayerIndex | null>(null);
-  const [scoreOpen, setScoreOpen] = useState(false);
 
   /** 步进 delta 步（供单击与长按连发共用；从 store 现取 step 避免闭包过期）。 */
   const stepBy = (delta: number): void => {
@@ -122,87 +119,32 @@ export function ReviewScreen({ store }: { store: GameStore }): ReactElement {
   const actor = actorOf(state);
   // GameRecord 不含昵称：以族名相称
   const displayNames = state.players.map((p) => factionName(p.faction));
-  const viewSeat = 0 as PlayerIndex;
+  const viewSeat = review.viewSeat;
   const stepAction = step > 0 ? record.actions[step - 1] : undefined;
 
   return (
-    <main className="app game-screen review-screen" data-testid="review-screen">
+    <main className="app game-screen review-screen" data-testid="review-screen" data-lf={state.config.lostFleet === true ? '1' : '0'}>
       <header className="game-topbar review-topbar" data-testid="review-topbar">
-        <span className="topbar-title">盖亚计划 · 复盘</span>
-        <span className="topbar-item" data-testid="review-round-info">
-          {state.phase === 'setup' ? '设置阶段' : state.phase === 'game-over' ? '对局结束' : `第 ${state.round} / 6 轮`}
-        </span>
-
-        <div className="topbar-right review-controls" data-testid="review-controls">
+        <div className="topbar-left">
+          <span className="topbar-title">盖亚计划 · 复盘</span>
+          <span className="topbar-item" data-testid="review-round-info">
+            {state.phase === 'setup' ? '设置阶段' : state.phase === 'game-over' ? '对局结束' : `第 ${state.round} / 6 轮`}
+          </span>
           <button
             type="button"
-            data-testid="review-first"
-            disabled={step === 0}
-            title="开头"
-            onClick={() => store.setReviewStep(0)}
+            className="top-act"
+            data-testid="review-start-here"
+            disabled={state.phase === 'game-over'}
+            title={state.phase === 'game-over' ? '终局面不可实战' : '以当前局面为残局开新房间（其余座位 AI 托管）'}
+            onClick={() => store.startFromReview()}
           >
-            ⏮
+            此处开始对局
           </button>
-          <button
-            type="button"
-            data-testid="review-prev"
-            disabled={step === 0}
-            title="上一步（长按连退）"
-            onClick={() => stepBy(-1)}
-            {...prevHold}
-          >
-            ◀
-          </button>
-          <button
-            type="button"
-            data-testid="review-play"
-            title={review.playing ? '暂停' : '播放'}
-            onClick={() => store.reviewTogglePlay()}
-          >
-            {review.playing ? '⏸' : '▶'}
-          </button>
-          <button
-            type="button"
-            data-testid="review-next"
-            disabled={step >= total}
-            title="下一步（长按连播）"
-            onClick={() => stepBy(1)}
-            {...nextHold}
-          >
-            ▶
-          </button>
-          <button
-            type="button"
-            data-testid="review-last"
-            disabled={step >= total}
-            title="结尾"
-            onClick={() => store.setReviewStep(total)}
-          >
-            ⏭
-          </button>
-          {SPEEDS.map((sp) => (
-            <button
-              key={sp}
-              type="button"
-              data-testid={`review-speed-${sp}`}
-              className={`review-speed${review.speed === sp ? ' active' : ''}`}
-              title={`${sp} 倍速`}
-              onClick={() => store.setReviewSpeed(sp)}
-            >
-              {sp}×
-            </button>
-          ))}
-          <input
-            type="range"
-            min={0}
-            max={total}
-            value={step}
-            aria-label="回放进度"
-            data-testid="review-scrub"
-            onChange={(e) => store.setReviewStep(Number(e.target.value))}
-          />
-          <span className="review-progress" data-testid="review-progress">
-            {step}/{total}
+        </div>
+        <div className="topbar-center" />
+        <div className="topbar-leave">
+          <span className="topbar-item actor" data-testid="review-actor">
+            {actor !== null ? `轮到：${displayNames[actor] ?? `玩家 ${actor + 1}`}` : '对局结束'}
           </span>
           <button type="button" className="top-act leave" data-testid="review-exit" onClick={() => store.exitReview()}>
             退出复盘
@@ -211,23 +153,61 @@ export function ReviewScreen({ store }: { store: GameStore }): ReactElement {
       </header>
 
       <div className="game-main" data-players={state.players.length}>
-        {/* 左栏：族板单列（只读，无拖拽） */}
-        <aside className="rail-l" data-testid="rail-l">
-          {state.players.map((_, i) => (
-            <PlayerMat
-              key={i}
-              state={filtered}
-              playerIdx={i}
-              nickname={displayNames[i]}
-              isMe={false}
-              active={actor === i}
-              onShowDetail={(p) => setDetailPlayer(p)}
-            />
-          ))}
-        </aside>
+        {/* 左栏：与对局同构（上 = 视角座位版图 + 面板/助推片；下 = 对手版图 TAB 切换） */}
+        <LeftRail
+          state={filtered}
+          seat={viewSeat}
+          nicknames={displayNames}
+          actor={actor}
+          thinkingSeats={[]}
+          onShowDetail={(p) => setDetailPlayer(p)}
+          onCycleViewSeat={() => store.setReviewViewSeat(((viewSeat + 1) % state.players.length) as PlayerIndex)}
+        />
 
-        {/* 中央：星图（只读）+ 行动栏区域 = 当前步描述；底部舰队/助推器池 */}
+        {/* 中央：回放控制条（星图正上方）+ 星图（只读）+ 底部舰队/助推器池 */}
         <section className="center-panel">
+          <div className="review-controls-bar" data-testid="review-controls">
+            <button type="button" data-testid="review-first" disabled={step === 0} title="开头" onClick={() => store.setReviewStep(0)}>
+              ⏮
+            </button>
+            <button type="button" data-testid="review-prev" disabled={step === 0} title="上一步（长按连退）" onClick={() => stepBy(-1)} {...prevHold}>
+              ◀
+            </button>
+            <button type="button" data-testid="review-play" title={review.playing ? '暂停' : '播放'} onClick={() => store.reviewTogglePlay()}>
+              {review.playing ? '⏸' : '▶'}
+            </button>
+            <button type="button" data-testid="review-next" disabled={step >= total} title="下一步（长按连播）" onClick={() => stepBy(1)} {...nextHold}>
+              ▶
+            </button>
+            <button type="button" data-testid="review-last" disabled={step >= total} title="结尾" onClick={() => store.setReviewStep(total)}>
+              ⏭
+            </button>
+            {SPEEDS.map((sp) => (
+              <button
+                key={sp}
+                type="button"
+                data-testid={`review-speed-${sp}`}
+                className={`review-speed${review.speed === sp ? ' active' : ''}`}
+                title={`${sp} 倍速`}
+                onClick={() => store.setReviewSpeed(sp)}
+              >
+                {sp}×
+              </button>
+            ))}
+            <input
+              type="range"
+              min={0}
+              max={total}
+              value={step}
+              aria-label="回放进度"
+              data-testid="review-scrub"
+              onChange={(e) => store.setReviewStep(Number(e.target.value))}
+            />
+            <span className="review-progress" data-testid="review-progress">
+              {step}/{total}
+            </span>
+          </div>
+
           <div className="map-area">
             <BoardSvg state={filtered} />
 
@@ -238,9 +218,6 @@ export function ReviewScreen({ store }: { store: GameStore }): ReactElement {
                   {step === 0 || stepAction === undefined
                     ? '开局'
                     : `#${step} ${displayNames[frame.stepActor ?? -1] ?? '—'}：${describeAction(stepAction)}`}
-                </span>
-                <span className="review-step-actor" data-testid="review-actor">
-                  {actor !== null ? `轮到：${displayNames[actor] ?? `玩家 ${actor + 1}`}` : '对局结束'}
                 </span>
               </div>
             </div>
@@ -262,30 +239,16 @@ export function ReviewScreen({ store }: { store: GameStore }): ReactElement {
         <aside className="rail-r" data-testid="rail-r">
           <ResearchBoard state={filtered} />
           <div className="scoreboard" data-testid="scoreboard">
-            <RoundArc state={filtered} />
+            <ScoreboardBoard state={filtered} nicknames={displayNames} seat={viewSeat} />
             <div className="scoreboard-ext-row">
               <span className="scoreboard-misc" data-testid="scoring-round-info">
                 回合 {state.round}/6
               </span>
-              <AdvExtension state={filtered} />
               <span className="scoreboard-misc">
                 先手：{displayNames[state.firstPlayer] ?? `玩家 ${state.firstPlayer + 1}`}
               </span>
-              <button
-                type="button"
-                className="btn-ghost score-toggle"
-                data-testid="score-toggle"
-                onClick={() => setScoreOpen((v) => !v)}
-              >
-                计分表 {scoreOpen ? '▴' : '▾'}
-              </button>
             </div>
-            <FinalsProgress state={filtered} nicknames={displayNames} seat={viewSeat} />
-            {scoreOpen ? (
-              <div className="score-pop" data-testid="score-pop">
-                <ScoreTable state={filtered} nicknames={displayNames} thinkingSeats={[]} seat={viewSeat} />
-              </div>
-            ) : null}
+            <ScoreTable state={filtered} nicknames={displayNames} thinkingSeats={[]} seat={viewSeat} />
           </div>
         </aside>
       </div>

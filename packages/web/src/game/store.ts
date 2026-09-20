@@ -190,6 +190,8 @@ export interface ReviewState {
   step: number;
   playing: boolean;
   speed: ReviewSpeed;
+  /** 第一视角座位（上方个人版图所属玩家；「此处开始对局」也以该座位入座）。 */
+  viewSeat: PlayerIndex;
 }
 
 /** 文件下载钩子（导出对局记录）：默认浏览器 Blob 下载，测试注入 spy。 */
@@ -369,6 +371,11 @@ export class GameStore {
     });
   }
 
+  /** 撤销自己最近的回合（服务端截断重放；snapshot 以更小 seq 回归时行动日志同步裁剪）。 */
+  undo(): void {
+    this.send({ type: 'undo', protocolVersion: PROTOCOL_VERSION, token: this.requireToken() });
+  }
+
   /** 导出当前对局记录：应答 export_data 到达后触发下载（gaia-<房码>-<N>steps.json）。 */
   exportGame(): void {
     this.send({ type: 'export_game', protocolVersion: PROTOCOL_VERSION, token: this.requireToken() });
@@ -421,6 +428,22 @@ export class GameStore {
     const review = this.state.review;
     if (review === null) return;
     this.patch({ review: { ...review, speed } });
+  }
+
+  /** 复盘：切换第一视角座位（上方个人版图所属玩家）。 */
+  setReviewViewSeat(seat: PlayerIndex): void {
+    const review = this.state.review;
+    if (review === null) return;
+    this.patch({ review: { ...review, viewSeat: seat } });
+  }
+
+  /** 复盘：从当前步进入真实对局（残局开新房间，其余座位 AI 托管）。 */
+  startFromReview(): void {
+    const review = this.state.review;
+    if (review === null) return;
+    const record: GameRecord = { ...review.record, actions: review.record.actions.slice(0, review.step) };
+    this.patch({ review: null });
+    this.send({ type: 'branch_game', protocolVersion: PROTOCOL_VERSION, record, seat: review.viewSeat, nickname: '我' });
   }
 
   /** 退出复盘回大厅（导入不进房间，无需通知服务器）。 */
@@ -608,7 +631,7 @@ export class GameStore {
           const record = this.pendingImport;
           this.pendingImport = null;
           this.patch({
-            review: { record, step: 0, playing: false, speed: 1 },
+            review: { record, step: 0, playing: false, speed: 1, viewSeat: 0 },
             lastError: null,
           });
           break;
@@ -619,6 +642,8 @@ export class GameStore {
           seq: msg.seq,
           // 对局开始（draft_confirm / random 直开）后不再处于 draft 阶段
           draft: null,
+          // 撤销回归（undo 后 seq 变小）：行动日志同步裁剪，被回退的行动不再展示
+          log: msg.seq < this.state.seq ? this.state.log.filter((e) => e.seq < msg.seq) : this.state.log,
           // 终局快照（resume 已终局对局/重启恢复）：从状态推导 gameOver，
           // 否则只靠 game_over 消息，刷新后胜者横幅会丢
           gameOver:
