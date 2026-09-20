@@ -375,8 +375,8 @@ select {
   --booster-h: calc(var(--mat-w) * 0.727 / 2);
   /* 科技片/高级片渲染宽 = 研究板同款片渲染宽（TECH_TILE_WIDTH/ADV_TILE_WIDTH × 板图渲染宽，
      板图渲染宽 = 右栏宽 - 右栏 padding(0.6vh×2) - 研究板 padding(4px×2)） */
-  --rb-tile-w: calc((var(--rail-r-w) - 1.2vh - 8px) * 0.115);
-  --rb-adv-w: calc((var(--rail-r-w) - 1.2vh - 8px) * 0.1);
+  --rb-tile-w: calc((var(--rail-r-w) - 1.2vh - 8px) * 0.13);
+  --rb-adv-w: calc((var(--rail-r-w) - 1.2vh - 8px) * 0.12);
   /* 种族飞船面板（版图正右方）占位宽：高 = --booster-h，宽 ≈ 高 × 面板纵横比（400/1240） */
   --panel-w: calc(var(--booster-h) * 0.323);
 }

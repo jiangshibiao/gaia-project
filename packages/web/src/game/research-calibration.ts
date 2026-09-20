@@ -45,19 +45,23 @@ export const TRACK_COLUMN_X: Record<ResearchTrack, number> = {
 /** 各等级格中心 y（L0 起始格在底部）。 */
 export const TRACK_LEVEL_Y: readonly number[] = [0.543, 0.462, 0.391, 0.281, 0.213, 0.043];
 
-/** 轨道内标准科技板槽中心 y（x 取所在轨列中心）。
- *  注意（v9 修正，与实体板一致）：标准板槽在中部面板行，顶部行是高级板槽。 */
-export const TRACK_TECH_Y = 0.653;
+/** 轨道内标准科技板槽中心 y（x 取所在轨列中心 + 印刷槽位右偏量）。
+ *  注意（v9 修正，与实体板一致）：标准板槽在中部面板行，顶部行是高级板槽；
+ *  印刷橙色槽位在面板内右偏 ≈+0.036x、y≈0.631（按 ResearchBoard.jpg 逐列实测）。 */
+export const TRACK_TECH_Y = 0.631;
+
+/** 标准板槽 x 右偏量（印刷槽位中心 vs 轨列中心，实测全列一致）。 */
+export const TECH_SLOT_DX = 0.036;
 
 /** 高级科技板槽中心 y（x 取所在轨列中心；槽 i 对齐 TRACK_ORDER[i]）。
  *  实体板上高级科技片放在科技轨最上方（每轨顶一格），不是中部。 */
 export const ADV_TECH_Y = 0.127;
 
-/** 自由标准科技板槽（free1..3）中心。 */
+/** 自由标准科技板槽（free1..3）中心（含印刷槽位右偏量，free1 实测 0.188）。 */
 export const FREE_TECH_SLOTS: readonly RelPoint[] = [
-  { x: 0.152, y: 0.791 },
-  { x: 0.473, y: 0.791 },
-  { x: 0.794, y: 0.791 },
+  { x: 0.188, y: 0.791 },
+  { x: 0.509, y: 0.791 },
+  { x: 0.83, y: 0.791 },
 ];
 
 /** power 行动格中心（power1..7，左→右 = 费用 7/5/4/4/4/3/3）。 */
@@ -92,7 +96,7 @@ export const BOARD_ACTION_SLOTS: Record<BoardActionId, RelPoint> = {
   qic3: QIC_ACTION_SLOTS[2]!,
 };
 
-/** 标准科技板槽（9 位）：轨道位取列中心 + TRACK_TECH_Y，free 取 FREE_TECH_SLOTS。 */
+/** 标准科技板槽（9 位）：轨道位取列中心 + TECH_SLOT_DX（印刷槽位右偏）+ TRACK_TECH_Y，free 取 FREE_TECH_SLOTS。 */
 export function techTileSlot(pos: TechTilePosition): RelPoint {
   switch (pos) {
     case 'terra':
@@ -101,7 +105,7 @@ export function techTileSlot(pos: TechTilePosition): RelPoint {
     case 'gaia':
     case 'eco':
     case 'sci':
-      return { x: TRACK_COLUMN_X[pos], y: TRACK_TECH_Y };
+      return { x: TRACK_COLUMN_X[pos] + TECH_SLOT_DX, y: TRACK_TECH_Y };
     case 'free1':
       return FREE_TECH_SLOTS[0]!;
     case 'free2':
@@ -122,8 +126,8 @@ export const LEVEL_BOX_RATIO = 2.1;
 export const LEVEL_DOT_FRAC = 0.2;
 /** 同格多 token 的横向错开步长（相对等级格容器宽）。 */
 export const LEVEL_DOT_STAGGER_FRAC = 0.24;
-/** 科技板图宽度（相对图宽）。 */
-export const TECH_TILE_WIDTH = 0.115;
+/** 科技板图宽度（相对图宽；≈2.3× 印刷槽位，与飞船科技片同放置思路）。 */
+export const TECH_TILE_WIDTH = 0.13;
 /** 科技板图宽高比（TEC* 扫描图 178×134；槽位按钮按此定高）。 */
 export const TECH_TILE_ASPECT = 178 / 134;
 /** 错落堆叠：单张图宽（相对槽宽 %，缩小以露出错层）。 */
@@ -131,7 +135,7 @@ export const TECH_STACK_WIDTH_PCT = 85;
 /** 错落堆叠：每层向右上偏移步长（相对槽宽 %，整叠居中于槽位）。 */
 export const TECH_STACK_OFFSET_PCT = 7.5;
 /** 高级板图宽度（相对图宽）。 */
-export const ADV_TILE_WIDTH = 0.1;
+export const ADV_TILE_WIDTH = 0.12;
 /** 行动格热区直径（相对图宽）。 */
 export const ACTION_ZONE_SIZE = 0.078;
 /** 已用 action token 直径（相对图宽）。 */
