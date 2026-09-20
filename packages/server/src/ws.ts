@@ -38,7 +38,7 @@ import { DEFAULT_SPEC, agentFactoryFromSpec, listAgentPlugins, pickFactionByStre
 import type { DecidingAgent, Difficulty } from '@gaia/llm';
 import { RoomError, RoomManager, toRoomState, type Room, type Seat } from './rooms.js';
 import { DraftError, applyDraftPick, draftFactionPool } from './draft.js';
-import { GameSession, SessionError, type SessionSeat } from './session.js';
+import { GameSession, SessionError, generateGameId, type SessionSeat } from './session.js';
 import { findGameById, findSeatByToken, listActions, listSeats, openDb, type Db } from './db/repo.js';
 
 export interface GameServerOptions {
@@ -623,6 +623,27 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
   }
 
   /**
+   * 撤销（undo 消息）：token → seat 校验后由 session 截断重放到该座位最近回合起点，
+   * 随后全房广播回归 seq 的 snapshot（client 依 seq 回退裁剪行动日志）。
+   * 撤销后行动者恒为该座位本人（pending 为空），无需 driveAI。
+   */
+  function handleUndo(msg: { token: string }): void {
+    if (typeof msg.token !== 'string') throw new WsError('bad-message', 'undo 需要 token');
+    const entry = sessionByToken.get(msg.token);
+    if (entry === undefined) {
+      if (rooms.findByToken(msg.token) !== null) {
+        throw new WsError('not-started', '对局尚未开始，不能撤销');
+      }
+      throw new WsError('invalid-token', 'token 不属于任何进行中对局');
+    }
+    const seat = entry.tokenSeats.get(msg.token);
+    if (seat === undefined) throw new WsError('invalid-token', 'token 无效');
+    // SessionError：game-finished / invalid-seat / nothing-to-undo / undo-unavailable 透传
+    entry.session.undo(seat);
+    broadcastSnapshots(entry);
+  }
+
+  /**
    * 主动退出对局/房间（leave 消息）：清 token 索引 → 处理座位 → 广播 →
    * 解绑本连接并 terminate（close 时因已解绑不再重复广播）。
    * - 对局进行中：座位标记断线（原对局继续，AI 座位由 driveAI 自动推进；
@@ -727,6 +748,81 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
   }
 
   /**
+   * 残局开新局（branch_game）：record 为已截断的行动前缀（client 在复盘当前步截断）。
+   * 先重放校验（同 import_game），再建单人+AI 房间（申请者坐 msg.seat，其余座位 AI 托管；
+   * 开放真人补位后续再加），GameSession 以 record.config 创建并逐条 submitAction 落库重放。
+   * 终局面不可实战（重放完成即 game-over 时拒绝）。
+   */
+  function handleBranchGame(conn: Conn, msg: { record: GameRecord; seat?: PlayerIndex; nickname?: string }): void {
+    assertDetached(conn);
+    const rec = msg.record;
+    if (
+      rec === null ||
+      typeof rec !== 'object' ||
+      rec.version !== 1 ||
+      typeof rec.config !== 'object' ||
+      rec.config === null ||
+      !Array.isArray(rec.actions)
+    ) {
+      throw new WsError('bad-message', 'branch_game 记录格式非法');
+    }
+    const seat = msg.seat ?? 0;
+    if (typeof seat !== 'number' || seat < 0 || seat >= rec.config.playerCount) {
+      throw new WsError('invalid-seat', `座位 ${String(msg.seat)} 越界`);
+    }
+    if (rec.actions.length === 0) {
+      throw new WsError('bad-message', 'branch_game 需要至少一条行动（无法从开局前分支）');
+    }
+    // 重放校验（不落地）
+    try {
+      let s = newGame(rec.config);
+      for (const action of rec.actions) {
+        s = applyAction(s, action);
+      }
+      if (s.phase === 'game-over') {
+        throw new WsError('import-invalid', '终局面不可实战');
+      }
+    } catch (e) {
+      if (e instanceof WsError) throw e;
+      throw new WsError('import-invalid', `行动日志无法重放: ${(e as Error).message}`);
+    }
+    const nickname = typeof msg.nickname === 'string' && msg.nickname.length > 0 ? msg.nickname : '我';
+    // 建房（申请者先占 seat 0，随后挪到自选座位；其余座位 AI 托管）
+    const playerCount = rec.config.playerCount as 2 | 3 | 4;
+    const aiSeats = Array.from({ length: playerCount - 1 }, () => ({ difficulty: 'normal' as const }));
+    const { room, token: humanToken } = rooms.createRoom(
+      { playerCount, lostFleet: rec.config.lostFleet ?? true, factionMode: 'random', aiSeats },
+      nickname,
+    );
+    // 座位重排：申请者放到 msg.seat，其余座位填 AI（token 仅占位，不进 tokenIndex）
+    const human = room.seats[0]!;
+    room.seats.splice(
+      0,
+      room.seats.length,
+      ...Array.from({ length: playerCount }, (_, i) =>
+        i === seat
+          ? { ...human, seat: i as PlayerIndex }
+          : { seat: i as PlayerIndex, nickname: `AI-${i}（普通）`, token: `ai-${generateGameId()}-${i}`, connected: true, isAI: true },
+      ),
+    );
+    room.started = true;
+    const seats: SessionSeat[] = room.seats.map((s) => ({ seat: s!.seat, nickname: s!.nickname, token: s!.token, isAI: s!.isAI }));
+    const session = new GameSession(db, undefined, rec.config, seats, room.code, { roomConfig: room.config });
+    const entry = buildEntry(session, room);
+    // 逐条落库重放（合法性由 submitAction 逐条裁决；终局已在上面拦截）
+    for (const action of rec.actions) {
+      const actor = actorOf(session.state);
+      if (actor === null) break;
+      session.submitAction(actor, action);
+    }
+    attach(conn, room, seat);
+    send(conn, { type: 'credentials', protocolVersion: PROTOCOL_VERSION, seat, token: humanToken });
+    broadcastRoomState(room);
+    broadcastSnapshots(entry);
+    void driveAI(entry);
+  }
+
+  /**
    * 导入对局记录（仅复盘查看，不进房间）：内存重放校验整个行动序列
    * （newGame(config) + 逐条 applyAction），成功则回发终态 snapshot
    * （seq=行动数，legalActions 仅当 seat 恰为应行动者时非空）。
@@ -794,6 +890,9 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
       case 'submit_action':
         handleSubmitAction(msg);
         break;
+      case 'undo':
+        handleUndo(msg);
+        break;
       case 'resume':
         handleResume(conn, msg);
         break;
@@ -805,6 +904,9 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
         break;
       case 'import_game':
         handleImportGame(conn, msg);
+        break;
+      case 'branch_game':
+        handleBranchGame(conn, msg);
         break;
       case 'ping':
         send(conn, { type: 'pong', protocolVersion: PROTOCOL_VERSION });

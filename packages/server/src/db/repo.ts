@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import type { Database as SqliteDatabase } from 'better-sqlite3';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gte } from 'drizzle-orm';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import type { Action, GameConfig } from '@gaia/engine';
 import type { RoomConfig } from '@gaia/protocol';
@@ -170,4 +170,11 @@ export function listActions(db: Db, gameId: string): { seq: number; player: numb
     .orderBy(asc(actions.seq))
     .all();
   return rows.map((r) => ({ seq: r.seq, player: r.player, action: JSON.parse(r.action) as Action }));
+}
+
+/** 撤销：删除 seq >= fromSeq 的全部落库行动（调用方随后按截断后的日志重放重建）。 */
+export function deleteActionsFrom(db: Db, gameId: string, fromSeq: number): void {
+  db.delete(actions)
+    .where(and(eq(actions.gameId, gameId), gte(actions.seq, fromSeq)))
+    .run();
 }

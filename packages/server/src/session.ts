@@ -18,13 +18,14 @@
  * engine 种子（可重放）。
  */
 import { randomBytes } from 'node:crypto';
-import { IllegalActionError, applyAction, enumerateActions, newGame } from '@gaia/engine';
+import { IllegalActionError, applyAction, enumerateActions, newGame, settleSetupSkips } from '@gaia/engine';
 import type { Action, GameConfig, GameState, PlayerIndex } from '@gaia/engine';
 import { actorOf, filterStateFor } from '@gaia/protocol';
 import type { FilteredState, RoomConfig } from '@gaia/protocol';
 import {
   appendAction,
   createGame,
+  deleteActionsFrom,
   findGameById,
   finishGame,
   listActions,
@@ -70,6 +71,7 @@ export class GameSession {
   readonly gameId: string;
   private readonly db: Db;
   private readonly seats: ReadonlySet<PlayerIndex>;
+  private readonly aiSeats: ReadonlySet<PlayerIndex>;
   private gameState: GameState;
   private seq = 0;
 
@@ -95,7 +97,10 @@ export class GameSession {
     this.db = db;
     this.gameId = gameId ?? generateGameId();
     this.seats = new Set(seats.map((s) => s.seat));
-    this.gameState = newGame(config);
+    this.aiSeats = new Set(seats.filter((s) => s.isAI === true).map((s) => s.seat));
+    // 开局即归一化：LF 新族/ivits 在 seat 0 时 setup 队首为空枚举——apply 层只在行动后
+    // 跑 settleSetupSkips，初始态必须在会话创建时就跳过，否则开局即死锁（队首 0 合法行动）。
+    this.gameState = settleSetupSkips(newGame(config));
     if (opts?.persist !== false) {
       createGame(db, {
         id: this.gameId,
@@ -208,6 +213,50 @@ export class GameSession {
       finishGame(this.db, this.gameId, this.gameState);
     }
     return { seq: applied };
+  }
+
+  /**
+   * 撤销座位最近的回合：截断落库日志到该回合起点（actorOf==seat 且 pending 为空的
+   * 最近点）并重放重建，回合内全部信息（资源/VP/pending/后续 AI 行动）一并还原。
+   * 资格约束：尾段不得有其他真人座位的行动（AI 行动/AI pending 响应可一并回退；
+   * 真人对手已响应或已行动时报 undo-unavailable 拒绝）。终局不可撤销。
+   * 返回截断后的 seq（= 回合起点）。
+   */
+  undo(seat: PlayerIndex): { seq: number } {
+    if (this.finished) {
+      throw new SessionError('game-finished', `对局 ${this.gameId} 已结束，不能撤销`);
+    }
+    this.assertSeat(seat);
+    const actions = listActions(this.db, this.gameId);
+    if (actions.length === 0) {
+      throw new SessionError('nothing-to-undo', '还没有可撤销的行动');
+    }
+    // 重放定位 seat 最近回合起点（actorOf==seat 且 pending 为空；初态先归一化跳过空枚举队首）
+    let turnStart = -1;
+    let state = settleSetupSkips(newGame(this.gameState.config));
+    for (let i = 0; i < actions.length; i++) {
+      if (state.pending === null && actorOf(state) === seat) {
+        turnStart = i;
+      }
+      state = applyAction(state, actions[i]!.action);
+    }
+    if (turnStart < 0 || turnStart === actions.length) {
+      throw new SessionError('nothing-to-undo', '还没有可撤销的行动');
+    }
+    // 资格：尾段（回合起点之后）不得有其他真人座位的行动
+    for (const a of actions.slice(turnStart)) {
+      if (a.player !== seat && !this.aiSeats.has(a.player as PlayerIndex)) {
+        throw new SessionError('undo-unavailable', '对手已响应/行动，当前不能撤销');
+      }
+    }
+    deleteActionsFrom(this.db, this.gameId, turnStart);
+    let rebuilt = settleSetupSkips(newGame(this.gameState.config));
+    for (const a of actions.slice(0, turnStart)) {
+      rebuilt = applyAction(rebuilt, a.action);
+    }
+    this.gameState = rebuilt;
+    this.seq = turnStart;
+    return { seq: turnStart };
   }
 
   /** 按座位视角的快照；legalActions 仅当 seat 是当前应行动玩家且对局未结束时非空。 */

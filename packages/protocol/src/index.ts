@@ -168,9 +168,11 @@ export type ClientMessage =
   | { type: 'draft_bid'; protocolVersion: number; token: string; faction: FactionId; bid: number } // auction 对已被持有的族抬价（须 > 当前价）
   | { type: 'draft_confirm'; protocolVersion: number; token: string } // draft 全员就绪后确认开局
   | { type: 'submit_action'; protocolVersion: number; token: string; action: Action }
+  | { type: 'undo'; protocolVersion: number; token: string } // 撤销自己最近的回合（服务端截断重放，广播回归 seq 的 snapshot）
   | { type: 'resume'; protocolVersion: number; token: string }
   | { type: 'leave'; protocolVersion: number; token: string } // 主动退出：清座位索引 + 广播 + 断开本连接（对局继续）
   | { type: 'export_game'; protocolVersion: number; token: string } // 导出当前对局记录（服务器从库读出整局行动日志）
   | { type: 'import_game'; protocolVersion: number; record: GameRecord; seat?: PlayerIndex } // 重放校验后回 snapshot（复盘查看用，不进房间；seat=查看视角，缺省 0）
+  | { type: 'branch_game'; protocolVersion: number; record: GameRecord; seat: PlayerIndex; nickname: string } // 残局开新房间：record 已为截断前缀；seat=申请入座（其余座位 AI 托管）
   | { type: 'list_agent_plugins'; protocolVersion: number } // 查询可用 AI 插件清单（无需 token）
   | { type: 'ping'; protocolVersion: number };

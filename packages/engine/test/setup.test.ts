@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   advanceSetup,
   colonizedHexes,
+  enumerateActions,
   FEDERATION_TOKENS,
   hexesWithin,
   IllegalActionError,
@@ -14,6 +15,7 @@ import {
   minDistanceToAny,
   newGame,
   playerBuildings,
+  settleSetupSkips,
   stableStringify,
   type GameConfig,
   type GameState,
@@ -295,6 +297,33 @@ describe('setup 队列', () => {
     expect(s.round).toBe(1);
     expect(s.currentPlayerIdx).toBe(s.firstPlayer);
     expect(s.lastEvents).toContain('setup-complete');
+  });
+
+  it('开局归一化：LF 新族/ivits 在 seat 0 时 settleSetupSkips 跳过空枚举队首（曾开局死锁）', () => {
+    // darkanians 在 seat 0：mines-1/2 阶段无放置（无母星），枚举为空
+    const s = newGame({
+      playerCount: 4,
+      seed: 303695223,
+      factions: ['darkanians', 'terrans', 'taklons', 'xenos'],
+      lostFleet: true,
+    });
+    expect(s.setupQueue[0]).toBe(0);
+    expect(enumerateActions(s, 0)).toHaveLength(0);
+    const settled = settleSetupSkips(s);
+    // 跳过 seat 0 后轮到 seat 1（terrans，有合法放置）
+    expect(settled.setupQueue[0]).toBe(1);
+    expect(enumerateActions(settled, 1).length).toBeGreaterThan(0);
+
+    // ivits 在 seat 0 同理（startingMines 0）
+    const s2 = newGame({
+      playerCount: 2,
+      seed: 7,
+      factions: ['ivits', 'terrans'],
+      lostFleet: true,
+    });
+    const settled2 = settleSetupSkips(s2);
+    expect(settled2.setupQueue[0]).toBe(1);
+    expect(enumerateActions(settled2, 1).length).toBeGreaterThan(0);
   });
 });
 
