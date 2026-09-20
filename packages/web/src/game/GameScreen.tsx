@@ -106,24 +106,21 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
   }, [s.seq]);
 
   // ---- 行动确认/撤销条 ----
-  // 回合起点检查点：actor 变为我（pending 为空、非终局）时记录当时状态；
-  // 此后我的每次提交都让 seq 超过检查点 → 底部浮条显示本回合资源/VP 增量，
-  // [完成] 收起（下次提交再出现）、[撤销回合] 发 undo（服务端截断重放，状态还原）。
+  // 检查点 = 我上一次提交**行动前**的快照：此后每次提交（seq 前进且上一帧轮到我）
+  // 都刷新检查点 → 底部浮条实时显示该行动的资源/VP 增量；
+  // [完成] 收起（下次行动再出现）、[撤销] 发 undo（服务端回退到该行动之前，可连撤）。
   const [turnCheckpoint, setTurnCheckpoint] = useState<{ seq: number; state: FilteredState } | null>(null);
   const [undoDismissedAt, setUndoDismissedAt] = useState<number | null>(null);
-  const prevActorRef = useRef<PlayerIndex | null>(null);
+  const prevFrameRef = useRef<{ seq: number; state: FilteredState; actor: PlayerIndex | null } | null>(null);
   useEffect(() => {
     if (state === null || seat === null) return;
     const cur = actorOf(state as GameState);
-    if (cur !== seat) {
-      prevActorRef.current = cur;
-      return;
-    }
-    if (state.pending === null && state.phase !== 'game-over' && prevActorRef.current !== seat) {
-      setTurnCheckpoint({ seq: s.seq, state });
+    const prev = prevFrameRef.current;
+    if (prev !== null && prev.actor === seat && s.seq > prev.seq) {
+      setTurnCheckpoint({ seq: prev.seq, state: prev.state });
       setUndoDismissedAt(null);
     }
-    prevActorRef.current = cur;
+    prevFrameRef.current = { seq: s.seq, state, actor: cur };
   }, [s.seq, seat, state]);
 
   const nicknames = useMemo(
@@ -310,14 +307,14 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
         {/* 中央：星图 + 底部横条（舰队 2×2 + 助推器池） */}
         <section className="center-panel">
           <div className="map-area">
-            {/* 行动确认/撤销条：本回合每次提交后浮出（增量实时计算） */}
+            {/* 行动确认/撤销条：每次行动后浮出（该行动增量实时计算，可连撤） */}
             {undoBarVisible ? (
               <div className="undo-bar" data-testid="undo-bar">
                 <span className="undo-delta" data-testid="undo-delta">
-                  本回合：{undoDelta.length > 0 ? undoDelta.map(([l, d]) => `${l}${d > 0 ? '+' : ''}${d}`).join(' ') : '无变化'}
+                  本次行动：{undoDelta.length > 0 ? undoDelta.map(([l, d]) => `${l}${d > 0 ? '+' : ''}${d}`).join(' ') : '无变化'}
                 </span>
                 <button type="button" className="btn-primary undo-btn" data-testid="undo-turn" onClick={() => store.undo()}>
-                  撤销回合
+                  撤销
                 </button>
                 <button type="button" className="btn-ghost undo-dismiss" data-testid="undo-dismiss" onClick={() => setUndoDismissedAt(s.seq)}>
                   完成

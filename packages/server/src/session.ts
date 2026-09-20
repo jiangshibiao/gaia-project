@@ -216,11 +216,11 @@ export class GameSession {
   }
 
   /**
-   * 撤销座位最近的回合：截断落库日志到该回合起点（actorOf==seat 且 pending 为空的
-   * 最近点）并重放重建，回合内全部信息（资源/VP/pending/后续 AI 行动）一并还原。
-   * 资格约束：尾段不得有其他真人座位的行动（AI 行动/AI pending 响应可一并回退；
+   * 撤销座位最近一次行动：截断落库日志到该行动之前（含其后全部行动一并回退）并重放重建，
+   * 该行动产生的资源/VP/pending/后续 AI 行动全部还原；可连续撤销（每次回退一步）。
+   * 资格约束：该行动之后不得有其他真人座位的行动（AI 行动/AI pending 响应可一并回退；
    * 真人对手已响应或已行动时报 undo-unavailable 拒绝）。终局不可撤销。
-   * 返回截断后的 seq（= 回合起点）。
+   * 返回截断后的 seq（= 被撤行动的原 seq）。
    */
   undo(seat: PlayerIndex): { seq: number } {
     if (this.finished) {
@@ -231,32 +231,31 @@ export class GameSession {
     if (actions.length === 0) {
       throw new SessionError('nothing-to-undo', '还没有可撤销的行动');
     }
-    // 重放定位 seat 最近回合起点（actorOf==seat 且 pending 为空；初态先归一化跳过空枚举队首）
-    let turnStart = -1;
-    let state = settleSetupSkips(newGame(this.gameState.config));
-    for (let i = 0; i < actions.length; i++) {
-      if (state.pending === null && actorOf(state) === seat) {
-        turnStart = i;
+    // 定位 seat 的最近一次行动（截断点 = 该行动索引）
+    let lastMyAction = -1;
+    for (let i = actions.length - 1; i >= 0; i--) {
+      if (actions[i]!.player === seat) {
+        lastMyAction = i;
+        break;
       }
-      state = applyAction(state, actions[i]!.action);
     }
-    if (turnStart < 0 || turnStart === actions.length) {
+    if (lastMyAction < 0) {
       throw new SessionError('nothing-to-undo', '还没有可撤销的行动');
     }
-    // 资格：尾段（回合起点之后）不得有其他真人座位的行动
-    for (const a of actions.slice(turnStart)) {
+    // 资格：该行动之后不得有其他真人座位的行动
+    for (const a of actions.slice(lastMyAction + 1)) {
       if (a.player !== seat && !this.aiSeats.has(a.player as PlayerIndex)) {
         throw new SessionError('undo-unavailable', '对手已响应/行动，当前不能撤销');
       }
     }
-    deleteActionsFrom(this.db, this.gameId, turnStart);
+    deleteActionsFrom(this.db, this.gameId, lastMyAction);
     let rebuilt = settleSetupSkips(newGame(this.gameState.config));
-    for (const a of actions.slice(0, turnStart)) {
+    for (const a of actions.slice(0, lastMyAction)) {
       rebuilt = applyAction(rebuilt, a.action);
     }
     this.gameState = rebuilt;
-    this.seq = turnStart;
-    return { seq: turnStart };
+    this.seq = lastMyAction;
+    return { seq: lastMyAction };
   }
 
   /** 按座位视角的快照；legalActions 仅当 seat 是当前应行动玩家且对局未结束时非空。 */
