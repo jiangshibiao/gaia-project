@@ -20,6 +20,7 @@ import { BoardSvg } from '../board/BoardSvg';
 import { BoostersStrip } from './BoostersStrip';
 import { FleetPanel } from './FleetPanel';
 import { LeftRail } from './LeftRail';
+import { PanelBoosterStack } from './ExplorationBoard';
 import { PlayerMat } from './PlayerMat';
 import { ResearchBoard } from './ResearchBoard';
 import { ScoreTable } from './ScoreTable';
@@ -256,7 +257,10 @@ export function ReviewScreen({ store }: { store: GameStore }): ReactElement {
       {detailPlayer !== null ? (
         <div className="modal-backdrop" data-testid="player-detail" onClick={() => setDetailPlayer(null)}>
           <div className="modal player-detail-modal" onClick={(e) => e.stopPropagation()}>
-            <PlayerMat state={filtered} playerIdx={detailPlayer} nickname={displayNames[detailPlayer]} detailed />
+            <div className="mat-detail-main">
+              <PlayerMat state={filtered} playerIdx={detailPlayer} nickname={displayNames[detailPlayer]} detailed />
+              <PanelBoosterStack state={filtered} seat={detailPlayer} />
+            </div>
             <button type="button" className="btn-primary" data-testid="close-player-detail" onClick={() => setDetailPlayer(null)}>
               关闭
             </button>

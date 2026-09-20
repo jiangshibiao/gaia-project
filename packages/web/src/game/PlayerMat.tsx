@@ -42,11 +42,9 @@ import {
   factionName,
   federationTokenName,
   playerColor,
-  shipName,
   techTileName,
   trackName,
 } from './display';
-import { PanelBoosterStack } from './ExplorationBoard';
 
 const TRACK_ORDER: readonly ResearchTrack[] = ['terra', 'nav', 'int', 'gaia', 'eco', 'sci'];
 
@@ -225,7 +223,6 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
       {detailed === true ? (
         <div className="mat-detail-strip">
           <TechBoosterStrip state={state} playerIdx={playerIdx} />
-          <PanelBoosterStack state={state} seat={playerIdx} />
         </div>
       ) : null}
     </section>

@@ -15,6 +15,7 @@ import type { FactionId } from '@gaia/engine';
 import { filterStateFor } from '@gaia/protocol';
 import type { FilteredState } from '@gaia/protocol';
 import { factionBoardImage } from '../assets';
+import { PanelBoosterStack } from './ExplorationBoard';
 import { PlayerMat, TechBoosterStrip } from './PlayerMat';
 
 function fixture(factions: FactionId[], lostFleet = false): FilteredState {
@@ -140,15 +141,22 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
     expect(m2?.className).not.toContain('draggable');
   });
 
-  it('详情弹窗（detailed）：渲染探索板 + TechBoosterStrip（科技/高级/联邦/推进）', () => {
+  it('详情弹窗（detailed）：TechBoosterStrip + 弹窗容器组合的飞船面板/助推片竖列', () => {
     const state = fixture(['terrans', 'xenos'], true);
     const p = state.players[0]!;
     p.techTiles = ['tech2', 'tech5'];
     p.advTechTiles = [{ id: 'advtech3', covers: 'tech5' }];
     p.booster = 'booster4';
-    const { getByTestId, unmount } = render(<PlayerMat state={state} playerIdx={0} detailed />);
-    // 探索板（LF）
+    // 弹窗结构（GameScreen/ReviewScreen 的 mat-detail-main）：detailed 版图 + 竖列在右上
+    const { getByTestId, unmount } = render(
+      <div className="mat-detail-main">
+        <PlayerMat state={state} playerIdx={0} detailed />
+        <PanelBoosterStack state={state} seat={0} />
+      </div>,
+    );
+    // 竖列（右上）：探索板 + 助推片
     expect(getByTestId('exploration-board-0')).toBeInTheDocument();
+    expect(getByTestId('side-booster-0').getAttribute('src')).toContain('BOOter');
     // TechBoosterStrip：未被覆盖的标准板直出；被覆盖的 tech5 置灰垫高级板下
     const strip = getByTestId('tech-booster-strip-0');
     expect(strip.querySelector('img[src*="TECtyp"]')).not.toBeNull();
@@ -156,18 +164,17 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
     expect(stack?.querySelector('img.covered')?.getAttribute('src')).toContain('TECore');
     expect(stack?.querySelector('img.adv-top')?.getAttribute('src')).toContain('ADVqic');
     expect(stack?.getAttribute('title')).toContain('覆盖');
-    // 推进片已迁出版图右侧竖列（side-booster），不在横条内
+    // 推进片不在横条内
     expect(strip.querySelector('img.booster')).toBeNull();
-    expect(getByTestId('side-booster-0').getAttribute('src')).toContain('BOOter');
     unmount();
 
-    // 空：TechBoosterStrip 不渲染（探索板仍在）
+    // 空：TechBoosterStrip 不渲染（detailed 自身不再渲染竖列）
     p.techTiles = [];
     p.advTechTiles = [];
     p.booster = null;
-    const { queryByTestId, getByTestId: g2 } = render(<PlayerMat state={state} playerIdx={0} detailed />);
+    const { queryByTestId } = render(<PlayerMat state={state} playerIdx={0} detailed />);
     expect(queryByTestId('tech-booster-strip-0')).toBeNull();
-    expect(g2('exploration-board-0')).toBeInTheDocument();
+    expect(queryByTestId('exploration-board-0')).toBeNull();
   });
 
   it('非详情模式不渲染探索板详区横条', () => {

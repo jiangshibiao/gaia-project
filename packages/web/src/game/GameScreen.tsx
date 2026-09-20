@@ -36,6 +36,7 @@ import { ActionBar } from './ActionBar';
 import { BoostersStrip } from './BoostersStrip';
 import { FleetPanel } from './FleetPanel';
 import { LeftRail } from './LeftRail';
+import { PanelBoosterStack } from './ExplorationBoard';
 import { PlayerMat } from './PlayerMat';
 import { ResearchBoard } from './ResearchBoard';
 import { ScoreTable } from './ScoreTable';
@@ -429,7 +430,10 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
       {detailPlayer !== null ? (
         <div className="modal-backdrop" data-testid="player-detail" onClick={() => setDetailPlayer(null)}>
           <div className="modal player-detail-modal" onClick={(e) => e.stopPropagation()}>
-            <PlayerMat state={state} playerIdx={detailPlayer} nickname={nicknames[detailPlayer]} isMe={detailPlayer === seat} detailed />
+            <div className="mat-detail-main">
+              <PlayerMat state={state} playerIdx={detailPlayer} nickname={nicknames[detailPlayer]} isMe={detailPlayer === seat} detailed />
+              <PanelBoosterStack state={state} seat={detailPlayer} />
+            </div>
             <button type="button" className="btn-primary" data-testid="close-player-detail" onClick={() => setDetailPlayer(null)}>
               关闭
             </button>

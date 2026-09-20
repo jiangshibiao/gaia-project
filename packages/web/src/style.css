@@ -2124,9 +2124,23 @@ select {
 
 /* 玩家详情弹窗（整体放大 1.5 倍：内容与非详情一致，只是变大） */
 .player-detail-modal {
-  max-width: 640px;
+  max-width: 720px;
   width: 92vw;
   zoom: 1.5;
+}
+
+/* 弹窗顶部：详情版图（左）+ 飞船面板/助推片竖列（右上，与左栏同构） */
+.player-detail-modal .mat-detail-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.player-detail-modal .mat-detail-main .player-mat {
+  flex: 1;
+  min-width: 0;
+}
+.player-detail-modal .mat-detail-main .panel-booster-stack {
+  align-self: flex-start;
 }
 
 .player-detail-modal .mat-detail-strip {
@@ -2134,9 +2148,6 @@ select {
   align-items: stretch;
   gap: 8px;
   margin-top: 6px;
-}
-.player-detail-modal .mat-detail-strip .exploration-board {
-  flex: none;
 }
 .player-detail-modal .mat-detail-strip .tech-booster-strip {
   flex: 1;
