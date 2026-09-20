@@ -1231,6 +1231,12 @@ select {
    让建筑下方印刷的收入标记常态可见；底行收入此前被棋子完全遮住。 */
 .mat-bld.overlay {
   transform: translate(-50%, -50%) translateY(-10%);
+  transition: opacity 0.12s ease-out;
+}
+
+/* 悬浮建筑时暂时隐去（opacity 0 保住热区/拖拽），完全露出下方印刷的解锁收入 */
+.mat-bld.overlay:hover {
+  opacity: 0;
 }
 
 .mat-bld.overlay.draggable {
