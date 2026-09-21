@@ -680,7 +680,8 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                     </text>
                   </g>
                 ) : null}
-                {hex.federations.length > 0 ? (
+                {/* 联邦归属标记（底部玩家色小点）：卫星格已有卫星大点，不再重复标记 */}
+                {hex.federations.length > 0 && hex.satelliteOf === undefined ? (
                   <g className="hex-federations">
                     {hex.federations.map((p, i) => (
                       <circle
