@@ -149,7 +149,7 @@ export const SHIP_CALIBRATION: Record<ShipId, ShipCalibration> = {
       { x: 0.5158, y: 0.4316 },
       { x: 0.632, y: 0.4477 },
     ],
-    techSlot: { x: 0.8225, y: 0.342 },
+    techSlot: { x: 0.75, y: 0.342 },
     fedToken: { x: 0.685, y: 0.7 },
     artifacts: null,
     shuttleSize: 0.03,

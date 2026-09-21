@@ -42,9 +42,9 @@ export const SB_FINAL_ROWS: readonly { x0: number; x1: number; y: number }[] = [
 export const SB_FINAL_MARKER = 0.028;
 
 /** LF 梯形扩展片上的第 7 高级科技片槽（相对梯形图）：中心 + 宽度。
-    2026-09-21 重测：灰色竖条纹槽区 x0.385-0.615 / y0.405-0.64（中心 0.50,0.52，
-    基本填满槽宽 0.23；旧值 (0.565,0.8,0.16) 偏右下且偏小，大屏下明显歪）。 */
-export const SB_EXT_ADV_SLOT = { x: 0.5, y: 0.52, w: 0.23 } as const;
+    2026-09-21 重测：灰色竖条纹槽区中心 (0.50,0.52)；宽 0.28 略大于槽区
+    （实体高级片即大于灰色面板槽、盖于其上；源图 167×132，放大清晰度受位图上限）。 */
+export const SB_EXT_ADV_SLOT = { x: 0.5, y: 0.52, w: 0.28 } as const;
 
 /** LF 梯形扩展片渲染宽（相对主板渲染宽；按两片实物比例 1677/2956 实测）。 */
 export const SB_EXT_WIDTH_FRAC = 0.567;
