@@ -112,6 +112,43 @@ describe('GameSession.undo', () => {
     expectSessionError(() => sess.undo(0), 'game-finished');
   });
 
+  it('被动充能响应可随主行动一并回退（撤销者撤回时蹭能玩家同步还原）', () => {
+    const db: Db = openDb(':memory:');
+    const config = configFor(2, 42);
+    const sess = new GameSession(db, 'g-undo-6', config, seatsFor(2));
+    // 打完 setup 进入行动阶段
+    while (sess.state.phase === 'setup') actOnce(sess);
+    // 找一个能产生充能邀约的建矿候选（在对手矿旁）
+    const builder = sess.actor!;
+    let mined = false;
+    for (const a of sess.snapshotFor(builder).legalActions) {
+      if (a.type !== 'build-mine') continue;
+      const probe = new GameSession(openDb(':memory:'), 'g-probe', config, seatsFor(2));
+      while (probe.state.phase === 'setup') actOnce(probe);
+      probe.submitAction(builder, a);
+      if (probe.state.pending?.kind === 'charge') {
+        sess.submitAction(builder, a);
+        mined = true;
+        break;
+      }
+    }
+    expect(mined, '应存在能产生充能邀约的建矿位').toBe(true);
+    expect(sess.state.pending?.kind).toBe('charge');
+    // 蹭能玩家（charge 队首）接受充能
+    const charger = sess.actor!;
+    const chargeAction = sess.snapshotFor(charger).legalActions.find((a) => a.type === 'charge');
+    expect(chargeAction).toBeDefined();
+    sess.submitAction(charger, chargeAction!);
+    // 建矿者撤销：尾段含真人 charge 响应，但属被动响应——允许，且蹭能同步还原
+    const r = sess.undo(builder);
+    expect(r.seq).toBe(sess.currentSeq);
+    expect(sess.state.pending).toBeNull();
+    // 重放一致性
+    const restored = GameSession.restore(db, 'g-undo-6');
+    expect(restored).not.toBeNull();
+    expect(stableStringify(restored!.state)).toBe(stableStringify(sess.state));
+  });
+
   it('开局归一化：LF 新族在 seat 0 时会话创建即跳过空枚举队首（曾开局死锁）', () => {
     const db: Db = openDb(':memory:');
     const config: GameConfig = {

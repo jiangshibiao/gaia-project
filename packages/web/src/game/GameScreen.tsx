@@ -25,10 +25,12 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { FACTIONS, FINAL_RANK_VP, FINAL_SCORING, finalCount } from '@gaia/engine';
-import type { Action, BoardActionId, BuildingType, FinalTileId, GameState, HexKey, PlayerIndex, ShipActionId, ShipId } from '@gaia/engine';
+import { FACTIONS, FINAL_RANK_VP, FINAL_SCORING, finalCount, mapNeighbors } from '@gaia/engine';
+import type { Action, BoardActionId, BuildingType, FederationTokenId, FinalTileId, GameState, HexKey, PlayerIndex, ShipActionId, ShipId } from '@gaia/engine';
 import { actorOf } from '@gaia/protocol';
 import type { FilteredState } from '@gaia/protocol';
+import { flashForAction, chargeTriggerHex } from './actionFlash';
+import type { ActionFlash } from './actionFlash';
 import { BUILDING_COLOR_FILTER, buildingImage } from '../assets';
 import { BoardSvg } from '../board/BoardSvg';
 import type { BoardSvgHandle } from '../board/BoardSvg';
@@ -42,7 +44,7 @@ import { ResearchBoard } from './ResearchBoard';
 import { ScoreTable } from './ScoreTable';
 import { ScoreboardBoard } from './ScoreboardBoard';
 import { TopActionBar } from './TopActionBar';
-import { describeAction, factionName, finalScoringName } from './display';
+import { describeAction, describeDelta, factionName, federationTokenName, finalScoringName } from './display';
 
 /** 连接状态文案（右栏状态行用）。 */
 const CONNECTION_LABEL: Record<string, string> = {
@@ -52,7 +54,7 @@ const CONNECTION_LABEL: Record<string, string> = {
 };
 import { applyDragDrop, planDrag, snapHex } from './drag';
 import type { DragBuilding, DragPlan } from './drag';
-import { currentQuestion, hexTargets, pick, startSelection } from './interactions';
+import { currentQuestion, hexTargets, isReady, pick, readyAction, startSelection } from './interactions';
 import type { CategoryId, Selection } from './interactions';
 import { useGameStore } from './store';
 import type { GameStore } from './store';
@@ -84,11 +86,22 @@ function finalTileVp(state: FilteredState, tileId: FinalTileId): number[] {
   return vp;
 }
 
+/** 轻量选择类行动：选完即直接提交，连确认条也跳过（放建筑/选助推器；撤销条兜底）。 */
+const DIRECT_SUBMIT_TYPES: ReadonlySet<Action['type']> = new Set(['place-initial-mine', 'build-mine', 'choose-booster']);
+
+/** 组建联邦两步交互的阶段：点卫星格 → 星球组合（同卫星集多解时）→ 选联邦片。 */
+type FedStage =
+  | { stage: 'satellites'; selected: HexKey[]; error?: string }
+  | { stage: 'planets'; satellites: HexKey[]; options: { hexes: HexKey[]; tokens: FederationTokenId[] }[] }
+  | { stage: 'token'; hexes: HexKey[]; satellites: HexKey[]; tokens: FederationTokenId[] };
+
 export function GameScreen({ store }: { store: GameStore }): ReactElement {
   const s = useGameStore(store);
   const state = s.snapshot;
   const seat = s.seat;
   const [selection, setSelection] = useState<Selection | null>(null);
+  /** 行动红框高亮（~5s；任一玩家行动回播后立即标出涉及位置）。 */
+  const [flash, setFlash] = useState<ActionFlash | null>(null);
   const [detailPlayer, setDetailPlayer] = useState<PlayerIndex | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const [overDismissed, setOverDismissed] = useState(false);
@@ -103,7 +116,95 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
   // 新快照（行动被接受/对局推进）→ 清空未完成的选择
   useEffect(() => {
     setSelection(null);
+    setFedStage(null);
   }, [s.seq]);
+
+  // ---- 组建联邦两步交互（点卫星格 → 选联邦片）----
+  // 不做全量形状枚举展示：玩家指定卫星格，引擎候选形状按卫星集精确匹配过滤，
+  // 不匹配则说明原因；匹配后进入标记选择（选项按钮 + 研究板/船上联邦片可点）。
+  const [fedStage, setFedStage] = useState<FedStage | null>(null);
+  const fedCandidates = useMemo(
+    () => s.legalActions.filter((a): a is Extract<Action, { type: 'form-federation' }> => a.type === 'form-federation'),
+    [s.legalActions],
+  );
+  /** 卫星集 → 星球组合 → 可拿标记（候选形状按卫星集分组）。 */
+  const fedSatGroups = useMemo(() => {
+    const m = new Map<string, { satellites: HexKey[]; planets: Map<string, { hexes: HexKey[]; tokens: FederationTokenId[] }> }>();
+    for (const a of fedCandidates) {
+      const satKey = a.satellites.join('|');
+      let g = m.get(satKey);
+      if (g === undefined) {
+        g = { satellites: a.satellites, planets: new Map() };
+        m.set(satKey, g);
+      }
+      const pKey = a.hexes.join('|');
+      let pg = g.planets.get(pKey);
+      if (pg === undefined) {
+        pg = { hexes: a.hexes, tokens: [] };
+        g.planets.set(pKey, pg);
+      }
+      pg.tokens.push(a.token);
+    }
+    return m;
+  }, [fedCandidates]);
+  /** 可点卫星格并集（出现在任一候选形状里的格）。 */
+  const fedSatOptions = useMemo(
+    () => new Set<HexKey>([...fedSatGroups.values()].flatMap((g) => g.satellites)),
+    [fedSatGroups],
+  );
+  /** 最少卫星快捷方案：候选形状中卫星数最少；数量并列时选"卫星格邻接的未殖民星球
+      最少"的——之后在那些星球上建矿会被吞并进该联邦（参考 addBuildingToNearbyFederation），
+      不利于再组新联邦，故越少越有利。 */
+  const bestFedShape = useMemo((): { satellites: HexKey[]; adjPlanets: number } | null => {
+    if (state === null) return null;
+    let best: { satellites: HexKey[]; adjPlanets: number } | null = null;
+    for (const g of fedSatGroups.values()) {
+      const adj = new Set<HexKey>();
+      for (const h of g.satellites) {
+        for (const nb of mapNeighbors(state.map, h)) {
+          const hex = state.map[nb];
+          if (hex !== undefined && hex.planet !== 'empty' && hex.building === undefined) {
+            adj.add(nb);
+          }
+        }
+      }
+      if (
+        best === null ||
+        g.satellites.length < best.satellites.length ||
+        (g.satellites.length === best.satellites.length && adj.size < best.adjPlanets)
+      ) {
+        best = { satellites: g.satellites, adjPlanets: adj.size };
+      }
+    }
+    return best;
+  }, [fedSatGroups, state]);
+  /** 确认卫星：精确匹配候选形状 → 星球组合唯一进标记选择 / 多组合再选 / 不匹配报原因。 */
+  const confirmFedSatellites = (): void => {
+    if (fedStage?.stage !== 'satellites') return;
+    const key = [...fedStage.selected].sort().join('|');
+    const g = fedSatGroups.get(key);
+    if (g === undefined) {
+      setFedStage({
+        stage: 'satellites',
+        selected: fedStage.selected,
+        error: '该卫星组合无法组建联邦（需连通己方建筑且能量值 ≥7、卫星数最少、不与已有联邦相邻）',
+      });
+      return;
+    }
+    const options = [...g.planets.values()];
+    if (options.length === 1) {
+      const pg = options[0]!;
+      setFedStage({ stage: 'token', hexes: pg.hexes, satellites: g.satellites, tokens: pg.tokens });
+    } else {
+      setFedStage({ stage: 'planets', satellites: g.satellites, options });
+    }
+  };
+  /** 提交联邦（形状 + 标记）。 */
+  const submitFedToken = (token: FederationTokenId): void => {
+    if (fedStage?.stage !== 'token') return;
+    onSubmit({ type: 'form-federation', hexes: fedStage.hexes, satellites: fedStage.satellites, token });
+    setFedStage(null);
+  };
 
   // ---- 行动确认/撤销条 ----
   // 检查点 = 我上一次提交**行动前**的快照：此后每次提交（seq 前进且上一帧轮到我）
@@ -128,53 +229,148 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     [s.room],
   );
 
+  // ---- 行动红框高亮 ----
+  // 5 秒消退；充能邀约 pending 期间触发 hex 持续红框（供判断是否蹭能量）
+  useEffect(() => {
+    if (flash === null || state?.pending?.kind === 'charge') return;
+    const t = setTimeout(() => setFlash(null), 5000);
+    return () => clearTimeout(t);
+  }, [flash, state?.pending?.kind]);
+  // 其他玩家/AI 的行动：新 action_applied 日志条目到达即标出（按日志长度增量判定，含首条）
+  const lastLogLenRef = useRef(0);
+  useEffect(() => {
+    const prevLen = lastLogLenRef.current;
+    lastLogLenRef.current = s.log.length;
+    if (s.log.length <= prevLen || state === null) return; // 无新增（含 undo 裁剪回退）
+    const entry = s.log[s.log.length - 1];
+    if (entry === undefined) return;
+    const f = flashForAction(entry.action, state, entry.player);
+    if (f !== null) setFlash(f);
+  }, [s.log, state]);
+  // 充能邀约 pending：触发 hex 持续红框
+  useEffect(() => {
+    if (state?.pending?.kind !== 'charge') return;
+    const hex = chargeTriggerHex(s.log);
+    if (hex === null) return;
+    setFlash((f) => {
+      if (f?.hexes.includes(hex) === true) return f;
+      return {
+        hexes: [...(f?.hexes ?? []), hex],
+        matSlot: f?.matSlot ?? null,
+        research: f?.research ?? null,
+        tileIds: f?.tileIds ?? [],
+        tilesPlayer: f?.tilesPlayer ?? null,
+        boosterPlayer: f?.boosterPlayer ?? null,
+      };
+    });
+  }, [state?.pending, s.log]);
+
   if (state === null || seat === null) {
     return <main className="app game-screen">等待对局数据…</main>;
   }
   const actor = actorOf(state as GameState);
 
-  // 撤销条可见性与增量（检查点之后有提交且未被[完成]暂时收起）
+  // ---- 撤销条可见性与增量 ----
+  // 只在我自己的回合有已提交行动时显示：
+  // - 检查点（我行动前快照）以来日志里须有我的回合内行动（被动充能响应不算——
+  //   那是别人回合的应答，"充能不可撤销"，不该因此弹条）。
+  //   **seq 口径**：服务器 action_applied.seq = 行动落库序号（= 行动前快照 seq），
+  //   snapshot.seq = 行动后计数；检查点快照 seq=S 时我的首个行动日志 seq=S，
+  //   故过滤边界为 >=（> 会把该行动漏掉——曾致撤销条整轮不显示）；
+  // - 之后没有其他**真人**座位的回合内行动（有则 server 必拒，显示即误导；
+  //   AI 行动不挡——可一并回退）；
+  // - 收起后仅当我又产生新的回合内行动才再弹出。
   const meNow = state.players[seat];
   const meThen = turnCheckpoint?.state.players[seat];
+  const aiSeats = new Set(
+    (s.room?.seats ?? []).flatMap((info) => (info?.isAI === true ? [info.seat] : [])),
+  );
+  const turnLog =
+    turnCheckpoint !== null
+      ? s.log.filter(
+          (e) =>
+            e.seq >= turnCheckpoint.seq &&
+            e.action.type !== 'charge' &&
+            e.action.type !== 'decline-charge',
+        )
+      : [];
+  const lastMyActionSeq = turnLog.reduce<number | null>(
+    (acc, e) => (e.player === seat ? Math.max(acc ?? 0, e.seq) : acc),
+    null,
+  );
+  const blockedByHuman = turnLog.some((e) => e.player !== seat && !aiSeats.has(e.player));
   const undoBarVisible =
     turnCheckpoint !== null &&
     meNow !== undefined &&
     meThen !== undefined &&
-    s.seq > turnCheckpoint.seq &&
-    (undoDismissedAt === null || s.seq > undoDismissedAt);
-  const undoDelta: [string, number][] = [];
-  if (undoBarVisible && meNow !== undefined && meThen !== undefined) {
-    const diff = (label: string, cur: number, old: number): void => {
-      if (cur !== old) undoDelta.push([label, cur - old]);
-    };
-    diff('矿', meNow.resources.ore, meThen.resources.ore);
-    diff('钱', meNow.resources.credits, meThen.resources.credits);
-    diff('知', meNow.resources.knowledge, meThen.resources.knowledge);
-    diff('Q', meNow.resources.qic, meThen.resources.qic);
-    diff('VP', meNow.vp, meThen.vp);
-  }
+    lastMyActionSeq !== null &&
+    !blockedByHuman &&
+    (undoDismissedAt === null || lastMyActionSeq > undoDismissedAt);
+  const undoDelta: [string, number][] =
+    undoBarVisible && meNow !== undefined && meThen !== undefined ? describeDelta(meThen, meNow) : [];
 
   const question = selection !== null ? currentQuestion(selection) : null;
-  // 拖拽中：高亮 = 拖拽合法落点；否则 = 选择机的 hex 问题目标
-  const highlights = drag !== null ? drag.plan.targets : selection !== null ? hexTargets(selection) : undefined;
+  // 高亮优先级：拖拽落点 > 联邦卫星选择态 > 选择机的 hex 问题目标
+  const highlights =
+    drag !== null
+      ? drag.plan.targets
+      : fedStage?.stage === 'satellites'
+        ? fedSatOptions
+        : selection !== null
+          ? hexTargets(selection)
+          : undefined;
   /** 当前选择问题的可选值集合（ResearchBoard / BoostersStrip 命中高亮用）。 */
   const activeOptions =
     question !== null
       ? new Set(question.options.map((o) => o.value).filter((v): v is string => v !== null))
       : null;
 
+  /**
+   * 轻量选择类（放起始矿/建矿/选助推器）：选完即直接提交，连确认条也跳过
+   * （建筑立即真实上板便于分析局势；后悔用撤销条回退）。
+   * 返回 true = 已直提（选择流结束，调用方不要再 setSelection）。
+   */
+  const tryDirectSubmit = (sel: Selection): boolean => {
+    if (!isReady(sel)) return false;
+    const action = readyAction(sel);
+    if (action === null || !DIRECT_SUBMIT_TYPES.has(action.type)) return false;
+    store.submitAction(action);
+    setSelection(null);
+    return true;
+  };
+
   const applyPick = (fieldKey: string, value: string | null): void => {
     if (selection === null) return;
-    setSelection(pick(selection, fieldKey, value));
+    const next = pick(selection, fieldKey, value);
+    if (tryDirectSubmit(next)) return;
+    setSelection(next);
   };
 
   const onHexClick = (hex: HexKey): void => {
+    // 联邦卫星选择态：点击高亮格放置/撤下卫星
+    if (fedStage?.stage === 'satellites') {
+      if (!fedSatOptions.has(hex)) return;
+      setFedStage((cur) => {
+        if (cur?.stage !== 'satellites') return cur;
+        const has = cur.selected.includes(hex);
+        return {
+          stage: 'satellites',
+          selected: has ? cur.selected.filter((h) => h !== hex) : [...cur.selected, hex],
+        };
+      });
+      return;
+    }
     if (selection === null || question === null || question.field.kind !== 'hex') return;
     if (!question.options.some((o) => o.value === hex)) return;
     applyPick(question.field.key, hex);
   };
 
   const onStartSelection = (category: CategoryId): void => {
+    // 组建联邦：不走选择机列表模式，进"点卫星格 → 选联邦片"两步交互
+    if (category === 'federation') {
+      if (fedCandidates.length > 0) setFedStage({ stage: 'satellites', selected: [] });
+      return;
+    }
     const sel = startSelection(s.legalActions, category);
     // 无字段问题的单候选类别（理论兜底）直接进确认条——isReady 时 ActionBar 自处理
     setSelection(sel);
@@ -200,6 +396,8 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
   };
 
   const onSubmit = (action: Action): void => {
+    // 全部行动确认即直接提交服务器（无暂结闸）；后悔用撤销条整回合回退。
+    // 红框由服务器回播的 action_applied 日志驱动（全员可见）。
     store.submitAction(action);
     setSelection(null);
   };
@@ -228,7 +426,8 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
       const hex = p != null ? snapHex(p, drag.plan.targets) : null;
       if (hex !== null) {
         const sel = applyDragDrop(s.legalActions, drag.plan, hex);
-        if (sel !== null) setSelection(sel);
+        // 拖拽放建筑：落锤即直提（同点选路径），其余进选择流
+        if (sel !== null && !tryDirectSubmit(sel)) setSelection(sel);
       }
       setDrag(null);
       setDragSnap(null);
@@ -302,12 +501,14 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
           onBuildingDragStart={actor === seat ? onBuildingDragStart : undefined}
           specialAvailable={actor === seat && s.legalActions.some((a) => a.type === 'special-action')}
           onSpecialAction={() => onStartSelection('special')}
+          flash={flash}
         />
 
         {/* 中央：星图 + 底部横条（舰队 2×2 + 助推器池） */}
         <section className="center-panel">
           <div className="map-area">
-            {/* 行动确认/撤销条：每次行动后浮出（该行动增量实时计算，可连撤） */}
+            {/* 撤销条：我本回合行动提交后浮出（增量 + [撤销]/[完成]；
+                真人对手行动后或充能响应后不显示） */}
             {undoBarVisible ? (
               <div className="undo-bar" data-testid="undo-bar">
                 <span className="undo-delta" data-testid="undo-delta">
@@ -316,7 +517,7 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
                 <button type="button" className="btn-primary undo-btn" data-testid="undo-turn" onClick={() => store.undo()}>
                   撤销
                 </button>
-                <button type="button" className="btn-ghost undo-dismiss" data-testid="undo-dismiss" onClick={() => setUndoDismissedAt(s.seq)}>
+                <button type="button" className="btn-ghost undo-dismiss" data-testid="undo-dismiss" onClick={() => setUndoDismissedAt(lastMyActionSeq ?? s.seq)}>
                   完成
                 </button>
               </div>
@@ -325,7 +526,9 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
               ref={boardRef}
               state={state}
               highlights={highlights}
+              flashHexes={flash?.hexes}
               onHexClick={onHexClick}
+              selectedHexes={fedStage?.stage === 'satellites' ? new Set(fedStage.selected) : undefined}
               snapPreview={
                 drag !== null && dragSnap !== null
                   ? { hex: dragSnap, building: drag.b as BuildingType, player: seat }
@@ -334,17 +537,113 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
               suppressHover={drag !== null}
             />
 
-            {/* 地图顶部浮动条：选择对话 / pending 决策 / setup 提示（不挡棋盘交互） */}
+            {/* 地图顶部浮动条：联邦两步交互 / 选择对话 / pending 决策 / setup 提示 */}
             <div className="map-top-overlay">
-              <ActionBar
-                state={state}
-                legalActions={s.legalActions}
-                seat={seat}
-                selection={selection}
-                onPick={applyPick}
-                onCancelSelection={() => setSelection(null)}
-                onSubmit={onSubmit}
-              />
+              {fedStage !== null ? (
+                <div className="action-bar" data-testid="action-bar">
+                  {fedStage.stage === 'satellites' ? (
+                    <div className="confirm-bar" data-testid="fed-sat-bar">
+                      <span className="confirm-text" data-testid="fed-sat-text">
+                        组建联邦：点击高亮格放置/撤下卫星（已选 {fedStage.selected.length} 颗）
+                        {fedStage.error !== undefined ? `——${fedStage.error}` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        data-testid="fed-sat-confirm"
+                        disabled={fedStage.selected.length === 0 && !fedSatGroups.has('')}
+                        onClick={confirmFedSatellites}
+                      >
+                        确认卫星
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        data-testid="fed-best-sat"
+                        disabled={bestFedShape === null}
+                        title="自动放置最少卫星方案（数量并列时选卫星邻接未殖民星球最少的——之后在那些星球建矿会被吞并进该联邦）"
+                        onClick={() => {
+                          if (bestFedShape !== null && fedStage?.stage === 'satellites') {
+                            setFedStage({ stage: 'satellites', selected: bestFedShape.satellites });
+                          }
+                        }}
+                      >
+                        最少卫星（{bestFedShape?.satellites.length ?? 0}）
+                      </button>
+                      <button type="button" className="btn-ghost" data-testid="fed-cancel" onClick={() => setFedStage(null)}>
+                        取消
+                      </button>
+                    </div>
+                  ) : fedStage.stage === 'planets' ? (
+                    <div className="selection-dialog" data-testid="fed-planets-dialog">
+                      <header className="dialog-head">
+                        <span>同一卫星布局对应多组星球：选择联邦星球组合</span>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          data-testid="fed-back-sat"
+                          onClick={() => setFedStage({ stage: 'satellites', selected: fedStage.satellites })}
+                        >
+                          返回
+                        </button>
+                      </header>
+                      <ul className="candidate-list">
+                        {fedStage.options.map((o) => (
+                          <li key={o.hexes.join('|')}>
+                            <button
+                              type="button"
+                              className="candidate-item"
+                              data-testid={`fed-planet-${o.hexes.join('_')}`}
+                              onClick={() => setFedStage({ stage: 'token', hexes: o.hexes, satellites: fedStage.satellites, tokens: o.tokens })}
+                            >
+                              {o.hexes.join('、')}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="selection-dialog" data-testid="fed-token-dialog">
+                      <header className="dialog-head">
+                        <span>
+                          选择联邦片（{fedStage.hexes.length} 星球 + {fedStage.satellites.length} 卫星；也可直接点研究板供应区/船上的联邦片）
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          data-testid="fed-back-sat2"
+                          onClick={() => setFedStage({ stage: 'satellites', selected: fedStage.satellites })}
+                        >
+                          返回
+                        </button>
+                      </header>
+                      <div className="option-grid" data-testid="fed-token-grid">
+                        {fedStage.tokens.map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            className="option-btn"
+                            data-testid={`fed-token-${t}`}
+                            onClick={() => submitFedToken(t)}
+                          >
+                            {federationTokenName(t)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <ActionBar
+                  state={state}
+                  legalActions={s.legalActions}
+                  seat={seat}
+                  selection={selection}
+                  onPick={applyPick}
+                  onCancelSelection={() => setSelection(null)}
+                  onSubmit={onSubmit}
+                />
+              )}
             </div>
 
             {/* 事件日志：地图左下角可折叠浮层 */}
@@ -381,6 +680,8 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
               legalActions={s.legalActions}
               onShipAction={onShipAction}
               onExplore={onExploreShip}
+              fedTokenOptions={fedStage?.stage === 'token' ? new Set(fedStage.tokens) : null}
+              onFedTokenPick={submitFedToken}
             />
           </div>
         </section>
@@ -395,6 +696,9 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
             onPick={applyPick}
             availableActions={availableBoardActions}
             onBoardAction={onBoardAction}
+            flashResearch={flash?.research ?? null}
+            fedTokenOptions={fedStage?.stage === 'token' ? new Set(fedStage.tokens) : null}
+            onFedTokenPick={submitFedToken}
           />
           <div className="scoreboard" data-testid="scoreboard">
             <ScoreboardBoard

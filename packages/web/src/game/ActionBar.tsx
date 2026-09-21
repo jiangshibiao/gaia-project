@@ -14,9 +14,11 @@
  */
 import type { ReactElement } from 'react';
 import type { Action, GameState, PlayerIndex } from '@gaia/engine';
+import { applyAction } from '@gaia/engine';
 import { actorOf } from '@gaia/protocol';
 import type { FilteredState } from '@gaia/protocol';
-import { factionName } from './display';
+import { tinkeringTileImage } from '../assets';
+import { deltaText, factionName } from './display';
 import {
   categoryDef,
   currentQuestion,
@@ -35,6 +37,24 @@ export interface ActionBarProps {
   onPick: (fieldKey: string, value: string | null) => void;
   onCancelSelection: () => void;
   onSubmit: (action: Action) => void;
+}
+
+/**
+ * 行动预览增量（本地 applyAction 试算，仅显示用，不产生任何状态）：
+ * 确认条上告诉玩家这一动的花销/收益（矿/钱/知/Q/VP）。
+ */
+function actionDeltaPreview(state: FilteredState, seat: PlayerIndex, action: Action | null): string {
+  if (action === null) return '';
+  const before = state.players[seat];
+  if (before === undefined) return '';
+  try {
+    const after = (applyAction(state as unknown as GameState, action, { assumeLegal: true }) as GameState).players[seat];
+    if (after === undefined) return '';
+    const t = deltaText(before, after);
+    return t !== '' ? `（${t}）` : '';
+  } catch {
+    return '';
+  }
 }
 
 export function ActionBar({
@@ -58,8 +78,9 @@ export function ActionBar({
       return (
         <div className="action-bar" data-testid="action-bar">
           <div className="confirm-bar" data-testid="confirm-bar">
-            <span className="confirm-text">
+            <span className="confirm-text" data-testid="confirm-text">
               {action !== null ? describeCandidate(action) : ''}
+              {actionDeltaPreview(state, seat, action)}
             </span>
             <button
               type="button"
@@ -153,7 +174,14 @@ export function ActionBar({
                     data-testid={`option-${o.value ?? 'null'}`}
                     onClick={() => onPick(q.field.key, o.value)}
                   >
-                    {o.label}
+                    {selection.category === 'tinkering' && o.value !== null ? (
+                      <>
+                        <img className="tinkering-tile-img" src={tinkeringTileImage(o.value)} alt={o.label} />
+                        <span>{o.label}</span>
+                      </>
+                    ) : (
+                      o.label
+                    )}
                   </button>
                 ))}
             </div>

@@ -29,6 +29,7 @@ import type {
   FreeConversionId,
   PlanetType,
   PlayerIndex,
+  PlayerState,
   ResearchTrack,
   ResourceGain,
   ShipActionId,
@@ -395,4 +396,29 @@ export function describeAction(action: Action): string {
     default:
       return (action as { type: string }).type;
   }
+}
+
+// ---------------------------------------------------------------------------
+// 资源/VP 增量
+// ---------------------------------------------------------------------------
+
+/** 两帧玩家状态的资源/VP 增量（[标签, 差值][]，仅列有变化项）。 */
+export function describeDelta(before: PlayerState, after: PlayerState): [string, number][] {
+  const out: [string, number][] = [];
+  const d = (label: string, cur: number, old: number): void => {
+    if (cur !== old) out.push([label, cur - old]);
+  };
+  d('矿', after.resources.ore, before.resources.ore);
+  d('钱', after.resources.credits, before.resources.credits);
+  d('知', after.resources.knowledge, before.resources.knowledge);
+  d('Q', after.resources.qic, before.resources.qic);
+  d('VP', after.vp, before.vp);
+  return out;
+}
+
+/** 增量数组 → 紧凑文本（"矿-2 钱+1 VP+5"；无变化 → 空串）。 */
+export function deltaText(before: PlayerState, after: PlayerState): string {
+  return describeDelta(before, after)
+    .map(([l, d]) => `${l}${d > 0 ? '+' : ''}${d}`)
+    .join(' ');
 }

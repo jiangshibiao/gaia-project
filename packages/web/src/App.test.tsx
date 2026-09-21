@@ -6,7 +6,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION, filterStateFor } from '@gaia/protocol';
 import type { ServerMessage } from '@gaia/protocol';
-import { enumerateActions } from '@gaia/engine';
+import { applyAction, enumerateActions } from '@gaia/engine';
+import type { Action, HexKey } from '@gaia/engine';
 import { App } from './App';
 import type { GameStore } from './game/store';
 import {
@@ -99,7 +100,7 @@ describe('<App> 路由', () => {
     expect(screen.queryByTestId('create-form')).not.toBeInTheDocument();
   });
 
-  it('setup 阶段：起始矿类别按钮 → 棋盘高亮 → 点选进确认条', () => {
+  it('setup 阶段：起始矿类别按钮 → 棋盘高亮 → 点选即直接提交（无确认条/暂结闸）', () => {
     const { store } = storeSetup();
     const ws = renderInRoom(store);
     const game = gameFixture();
@@ -120,12 +121,145 @@ describe('<App> 路由', () => {
     const clickable = document.querySelectorAll('polygon.hex-hit.clickable');
     expect(clickable.length).toBeGreaterThan(0);
     fireEvent.click(clickable[0]!);
-    // 候选唯一 → 确认条
-    expect(screen.getByTestId('confirm-bar')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('confirm-submit'));
+    // 点选目的地即直接提交服务器：无确认条、无暂结条（撤销条兜底）
+    expect(screen.queryByTestId('confirm-bar')).toBeNull();
+    expect(screen.queryByTestId('pending-commit-bar')).toBeNull();
     const sent = ws.lastSent() as { type: string; action?: { type: string } };
     expect(sent.type).toBe('submit_action');
     expect(sent.action?.type).toBe('place-initial-mine');
+  });
+
+  it('行动红框：服务器回播 action_applied 即标出（地图 hex + 版图解锁槽）；AI 爬轨行动到达格标红', () => {
+    const { store } = storeSetup();
+    const ws = renderInRoom(store);
+    const game = gameFixture();
+    expect(game.setupQueue[0]).toBe(0);
+    act(() => {
+      ws.emit({
+        type: 'snapshot',
+        protocolVersion: PROTOCOL_VERSION,
+        seq: 1,
+        state: filterStateFor(game),
+        legalActions: enumerateActions(game, game.setupQueue[0]!),
+      });
+    });
+    fireEvent.click(screen.getByTestId('action-setup-mine'));
+    fireEvent.click(document.querySelectorAll('polygon.hex-hit.clickable')[0]!);
+    // 已直提；取回提交的 hex 构造服务器回播
+    const sent = ws.lastSent() as { type: string; action?: { type: string; hex?: string } };
+    expect(sent.action?.type).toBe('place-initial-mine');
+    const placed: Action = { type: 'place-initial-mine', hex: sent.action!.hex! as HexKey };
+    const after = applyAction(game, placed, { assumeLegal: true });
+    act(() => {
+      ws.emit({
+        type: 'action_applied',
+        protocolVersion: PROTOCOL_VERSION,
+        seq: 1,
+        player: 0,
+        action: placed,
+        events: [],
+      });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: filterStateFor(after), legalActions: [] });
+    });
+    // 回播即标：地图 hex 红框 + 版图解锁槽红框（全员可见）
+    expect(document.querySelector('polygon.hex-flash')).not.toBeNull();
+    expect(screen.getByTestId('mat-flash-slot-0')).toBeInTheDocument();
+    // AI 爬轨行动：action_applied 日志 + 快照 → 轨道到达格红框
+    const s2 = filterStateFor(after);
+    s2.players[1]!.research.terra = 1;
+    act(() => {
+      ws.emit({
+        type: 'action_applied',
+        protocolVersion: PROTOCOL_VERSION,
+        seq: 2,
+        player: 1,
+        action: { type: 'research', track: 'terra' },
+        events: [],
+      });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 3, state: s2, legalActions: [] });
+    });
+    expect(screen.getByTestId('rb-flash-terra')).toBeInTheDocument();
+  });
+
+  it('被动充能响应不走确认闸门：直接提交，无暂结条', () => {
+    const { store } = storeSetup();
+    const ws = renderInRoom(store);
+    const game = gameFixture();
+    const s = filterStateFor(game);
+    s.pending = { kind: 'charge', queue: [{ player: 0, amount: 2, vpCost: 1 }] };
+    act(() => {
+      ws.emit({
+        type: 'snapshot',
+        protocolVersion: PROTOCOL_VERSION,
+        seq: 1,
+        state: s,
+        legalActions: [{ type: 'charge', amount: 2 }, { type: 'decline-charge' }],
+      });
+    });
+    fireEvent.click(screen.getByTestId('charge-accept'));
+    // 直接提交服务器，无确认闸门条
+    const sent = ws.lastSent() as { type: string; action?: { type: string } };
+    expect(sent.type).toBe('submit_action');
+    expect(sent.action?.type).toBe('charge');
+    expect(screen.queryByTestId('pending-commit-bar')).toBeNull();
+  });
+
+  it('免费兑换/烧脑不走确认闸门：直接提交，无暂结条（后悔走整回合撤销）', () => {
+    const { store } = storeSetup();
+    const ws = renderInRoom(store);
+    const game = gameFixture();
+    const s = filterStateFor(game);
+    // 主阶段轮到我（setup 态无兑换：直接改阶段字段，legalActions 塞兑换项）
+    s.phase = 'action';
+    s.setupQueue = [];
+    s.currentPlayerIdx = 0;
+    act(() => {
+      ws.emit({
+        type: 'snapshot',
+        protocolVersion: PROTOCOL_VERSION,
+        seq: 1,
+        state: s,
+        legalActions: [{ type: 'free-conversion', conversion: 'pw1-c' }, { type: 'pass', booster: 'booster1' }],
+      });
+    });
+    fireEvent.click(screen.getByTestId('convert-toggle'));
+    fireEvent.click(screen.getByTestId('convert-pw1-c'));
+    // 直接提交服务器，无确认闸门条
+    const sent = ws.lastSent() as { type: string; action?: { type: string; conversion?: string } };
+    expect(sent.type).toBe('submit_action');
+    expect(sent.action?.type).toBe('free-conversion');
+    expect(sent.action?.conversion).toBe('pw1-c');
+    expect(screen.queryByTestId('pending-commit-bar')).toBeNull();
+  });
+
+  it('主阶段建矿：点选棋盘即直接提交（无确认条/暂结闸）', () => {
+    const { store } = storeSetup();
+    const ws = renderInRoom(store);
+    const game = gameFixture();
+    const s = filterStateFor(game);
+    s.phase = 'action';
+    s.setupQueue = [];
+    s.currentPlayerIdx = 0;
+    const hexes = Object.keys(s.map).slice(0, 3);
+    act(() => {
+      ws.emit({
+        type: 'snapshot',
+        protocolVersion: PROTOCOL_VERSION,
+        seq: 1,
+        state: s,
+        legalActions: hexes.map((hex) => ({ type: 'build-mine', hex: hex as HexKey })),
+      });
+    });
+    fireEvent.click(screen.getByTestId('action-mine'));
+    const clickable = document.querySelectorAll('polygon.hex-hit.clickable');
+    expect(clickable.length).toBeGreaterThan(0);
+    fireEvent.click(clickable[0]!);
+    // 点选目的地即直接提交服务器：无确认条、无暂结条（撤销条兜底）
+    expect(screen.queryByTestId('confirm-bar')).toBeNull();
+    expect(screen.queryByTestId('pending-commit-bar')).toBeNull();
+    const sent = ws.lastSent() as { type: string; action?: { type: string } };
+    expect(sent.type).toBe('submit_action');
+    expect(sent.action?.type).toBe('build-mine');
   });
 
   it('终局：保留对局界面，结算弹窗显示胜者；离开对局清空 token 回大厅', () => {

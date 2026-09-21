@@ -12,14 +12,15 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION, filterStateFor } from '@gaia/protocol';
-import { enumerateActions, newGame } from '@gaia/engine';
+import { enumerateActions, mapNeighbors, newGame } from '@gaia/engine';
+import type { HexKey } from '@gaia/engine';
 import { App } from '../App';
 import type { GameStore } from './store';
 import { gameFixture, lastWs, roomFixture, setupStore } from '../test/fakes';
 import type { FakeWebSocket } from '../test/fakes';
 
 /** 渲染 App 并入座 + 推一个 setup 快照。 */
-function renderInGame(store: GameStore): FakeWebSocket {
+function renderInGame(store: GameStore, room?: Parameters<typeof roomFixture>[0]): FakeWebSocket {
   render(<App store={store} />);
   const ws = lastWs();
   act(() => {
@@ -28,7 +29,7 @@ function renderInGame(store: GameStore): FakeWebSocket {
     ws.emit({
       type: 'room_state',
       protocolVersion: PROTOCOL_VERSION,
-      room: roomFixture({ code: 'ABCD23' }),
+      room: roomFixture({ code: 'ABCD23', ...room }),
       yourSeat: 0,
     });
   });
@@ -213,6 +214,7 @@ describe('<GameScreen> v6 布局契约', () => {
     s2.players[0]!.vp += 5;
     s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
     act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'place-initial-mine', hex: '0,0' }, events: [] });
       ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
     });
     const bar = screen.getByTestId('undo-bar');
@@ -229,9 +231,83 @@ describe('<GameScreen> v6 布局契约', () => {
     s3.players[0]!.resources.credits -= 1;
     s3.setupQueue = [1, 0, 1, 0, 1, 1, 1];
     act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 2, player: 0, action: { type: 'free-conversion', conversion: 'pw1-c' }, events: [] });
       ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 3, state: s3, legalActions: [] });
     });
     expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
+  });
+
+  it('撤销条：真人对手行动后消失（server 必拒不误导）；AI 对手行动不挡', () => {
+    // 全真人房间：seat 0 行动 → 条显示；seat 1（真人）行动 → 条消失
+    const { store } = setupStore();
+    const ws = renderInGame(store);
+    const game = gameFixture();
+    const s2 = filterStateFor(game);
+    s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'place-initial-mine', hex: '0,0' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+    });
+    expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
+    const s3 = filterStateFor(game);
+    s3.setupQueue = [0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 2, player: 1, action: { type: 'place-initial-mine', hex: '1,0' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 3, state: s3, legalActions: [] });
+    });
+    expect(screen.queryByTestId('undo-bar')).toBeNull();
+  });
+
+  it('撤销条：AI 对手行动不挡（可一并回退，撤销仍可用）', () => {
+    const { store } = setupStore();
+    const ws = renderInGame(store, {
+      seats: [
+        { seat: 0, nickname: '甲', isAI: false, connected: true },
+        { seat: 1, nickname: 'AI-1', isAI: true, connected: true },
+        { seat: 2, nickname: 'AI-2', isAI: true, connected: true },
+        { seat: 3, nickname: 'AI-3', isAI: true, connected: true },
+      ],
+    });
+    const game = gameFixture();
+    const s2 = filterStateFor(game);
+    s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'place-initial-mine', hex: '0,0' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+    });
+    expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
+    const s3 = filterStateFor(game);
+    s3.setupQueue = [0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 2, player: 1, action: { type: 'place-initial-mine', hex: '1,0' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 3, state: s3, legalActions: [] });
+    });
+    // AI 行动后撤销条仍在（server 允许回退 AI 行动）
+    expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
+  });
+
+  it('撤销条：被动充能响应不触发（充能不可撤销，不弹条骚扰）', () => {
+    const { store } = setupStore();
+    const ws = renderInGame(store);
+    const game = gameFixture();
+    const s2 = filterStateFor(game);
+    s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'place-initial-mine', hex: '0,0' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+    });
+    expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
+    // 完成收起 → 对面回合我点充能 → 条不再弹出
+    fireEvent.click(screen.getByTestId('undo-dismiss'));
+    expect(screen.queryByTestId('undo-bar')).toBeNull();
+    const s3 = filterStateFor(game);
+    s3.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    s3.pending = { kind: 'charge', queue: [{ player: 0, amount: 2, vpCost: 1 }] };
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 2, player: 0, action: { type: 'charge' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 3, state: s3, legalActions: [] });
+    });
+    expect(screen.queryByTestId('undo-bar')).toBeNull();
   });
 
   it('旧底部栏整体移除（无 tab / 合并面板 / 时代标记条）', () => {
@@ -259,6 +335,95 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(scoreboard.querySelector('[data-testid="score-table"]')).not.toBeNull();
     expect(screen.queryByTestId('score-toggle')).toBeNull();
     expect(screen.queryByTestId('score-pop')).toBeNull();
+  });
+
+  it('组建联邦两步交互：点卫星格 → 确认 → 选项/供应区联邦片提交', () => {
+    const { store } = setupStore();
+    const ws = renderInGame(store);
+    const game = gameFixture();
+    const s = filterStateFor(game);
+    s.phase = 'action';
+    s.setupQueue = [];
+    s.currentPlayerIdx = 0;
+    const keys = Object.keys(s.map) as HexKey[];
+    const empty = keys.filter((k) => s.map[k]!.planet === 'empty');
+    const sat = empty[0]!;
+    const hexes = [keys[1]!, keys[2]!, keys[3]!].sort();
+    act(() => {
+      ws.emit({
+        type: 'snapshot',
+        protocolVersion: PROTOCOL_VERSION,
+        seq: 2,
+        state: s,
+        legalActions: [
+          { type: 'form-federation', hexes, satellites: [sat], token: 'fed2' },
+          { type: 'form-federation', hexes, satellites: [sat], token: 'fed3' },
+        ],
+      });
+    });
+    // 点「组建联邦」→ 卫星选择条；0 颗且无 0 卫星候选 → 确认禁用
+    fireEvent.click(screen.getByTestId('action-federation'));
+    expect(screen.getByTestId('fed-sat-bar')).toBeInTheDocument();
+    expect(screen.getByTestId('fed-sat-confirm')).toBeDisabled();
+    // 棋盘高亮 = 候选卫星格（仅 1 格）；点击选中 → 已选 1 颗
+    const clickable = document.querySelectorAll('polygon.hex-hit.clickable');
+    expect(clickable.length).toBe(1);
+    fireEvent.click(clickable[0]!);
+    expect(screen.getByTestId('fed-sat-text').textContent).toContain('已选 1 颗');
+    // 确认 → 星球组合唯一 → 直接进联邦片选择（选项按钮 + 供应区片均可点）
+    fireEvent.click(screen.getByTestId('fed-sat-confirm'));
+    expect(screen.getByTestId('fed-token-dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('fed-token-fed2')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('fed-supply-fed3'));
+    const sent = ws.lastSent() as { type: string; action?: { type: string; token?: string; satellites?: string[] } };
+    expect(sent.type).toBe('submit_action');
+    expect(sent.action?.type).toBe('form-federation');
+    expect(sent.action?.token).toBe('fed3');
+    expect(sent.action?.satellites).toEqual([sat]);
+    // 提交后退出联邦交互态
+    expect(screen.queryByTestId('fed-token-dialog')).toBeNull();
+  });
+
+  it('组建联邦：最少卫星快捷按钮（数量并列选邻接未殖民星球最少的）', () => {
+    const { store } = setupStore();
+    const ws = renderInGame(store);
+    const game = gameFixture();
+    const s = filterStateFor(game);
+    s.phase = 'action';
+    s.setupQueue = [];
+    s.currentPlayerIdx = 0;
+    const keys = Object.keys(s.map) as HexKey[];
+    const adjPlanets = (k: HexKey): number =>
+      mapNeighbors(s.map, k).filter((nb) => s.map[nb]!.planet !== 'empty').length;
+    const emptyKeys = keys.filter((k) => s.map[k]!.planet === 'empty');
+    const satY = emptyKeys.find((k) => adjPlanets(k) === 0) ?? emptyKeys[0]!;
+    const satX = emptyKeys.find((k) => k !== satY && adjPlanets(k) >= 2) ?? emptyKeys.find((k) => k !== satY)!;
+    const hexes = [keys[1]!, keys[2]!, keys[3]!].sort();
+    act(() => {
+      ws.emit({
+        type: 'snapshot',
+        protocolVersion: PROTOCOL_VERSION,
+        seq: 2,
+        state: s,
+        legalActions: [
+          { type: 'form-federation', hexes, satellites: [satX], token: 'fed2' },
+          { type: 'form-federation', hexes, satellites: [satY], token: 'fed2' },
+          { type: 'form-federation', hexes, satellites: [satX, satY].sort(), token: 'fed2' },
+        ],
+      });
+    });
+    fireEvent.click(screen.getByTestId('action-federation'));
+    // 快捷按钮：最少卫星 1 颗；点击自动放置邻接星球最少的 satY
+    const btn = screen.getByTestId('fed-best-sat');
+    expect(btn.textContent).toContain('最少卫星（1）');
+    fireEvent.click(btn);
+    expect(screen.getByTestId('fed-sat-text').textContent).toContain('已选 1 颗');
+    // 确认 → 匹配 [satY] 形状 → token 步提交后 satellites 恰为 [satY]
+    fireEvent.click(screen.getByTestId('fed-sat-confirm'));
+    fireEvent.click(screen.getByTestId('fed-token-fed2'));
+    const sent = ws.lastSent() as { type: string; action?: { type: string; satellites?: string[] } };
+    expect(sent.action?.type).toBe('form-federation');
+    expect(sent.action?.satellites).toEqual([satY]);
   });
 
   it('事件日志为地图内可折叠浮层', () => {
