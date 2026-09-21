@@ -39,7 +39,8 @@ Etchelon/boardgamers viewer/uiqoo/Feuerland/BGG 等公开来源重建（约 300 
 - **不要让裸 `tsc` 的 `.js` 产物进 `packages/*/src`**（已被 gitignore；陈旧 .js 会让 vitest 优先加载它们导致解析失败）。
 - **引擎纯函数 + 种子确定性**：`newGame(config)` 同 config 逐字节一致；`applyAction` 克隆后原地改；随机一律 `createRng(seed)`（mulberry32），引擎内禁止 `Date.now`/`Math.random`；`stableStringify` 做重放与合法性校验（行动 = 枚举集成员比对）。
 - **行动模型**：原子行动 + pending 队列。主行动消耗回合；免费行动不消耗；pending（charge 队首/其他 kind 的 .player）> setupQueue[0] > currentPlayerIdx（`actorOf` 统一裁决，server/web 共用）。
-- **撤销（undo）**：`session.undo(seat)` 截断落库到该座位最近回合起点（`actorOf==seat && pending==null` 的最近点）并重放重建；尾段含其他**真人**座位行动则拒（AI 行动/响应可一并回退）。web 端 `store.undo()`；快照 seq 回归时 store 同步裁剪行动日志；GameScreen 回合起点检查点驱动「撤销条」（每次提交后浮出，显示本回合资源/VP 增量，[撤销回合]/[完成]）。
+- **撤销（undo）**：`session.undo(seat)` 截断落库到该座位最近回合起点（`actorOf==seat && pending==null` 的最近点）并重放重建；尾段含其他**真人**座位行动则拒（AI 行动/响应可一并回退）。web 端 `store.undo()`；快照 seq 回归时 store 同步裁剪行动日志；GameScreen 回合起点检查点驱动「撤销条」（每次提交后浮出，显示本行动资源/VP 增量，[撤销]/[完成]）。**撤销条显示条件**（2026-09-21 收紧）：检查点以来日志有我的回合内行动（charge/decline 充能响应不算——充能不可撤销不弹条），且无其他**真人**座位的回合内行动（`SeatInfo.isAI` 判定；真人对手行动后 server 必拒，显示即误导；AI 行动不挡），收起后仅当我又行动才再弹出。
+- **行动确认流（2026-09-21 简化，暂结闸已废）**：全部行动确认即直接提交服务器（无本地暂结态）；放建筑（`place-initial-mine`/`build-mine`）与选助推器（`choose-booster`）连确认条也跳过——选完即提交（`GameScreen.tryDirectSubmit`）。确认条（ActionBar confirm-bar）上用本地 `applyAction(assumeLegal)` 试算显示该行动花销/收益增量（`display.describeDelta/deltaText`，纯展示不产生状态）。后悔一律用撤销条整回合回退。行动红框（`actionFlash.ts`）由服务器回播的 action_applied 日志驱动（全员可见），地图 hex/版图解锁槽/轨道到达格/板块，~5s。
 - **回合顺序**：下轮行动顺序 = 本轮 pass 顺序（不是固定桌序；被动充能/leech 仍按桌序）。
 - **严格 TS**：strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes。改 types.ts 只追加不改语义。
 - **任何服务器拒绝必须有可见反馈**（error-toast；`lastError` 曾只写不上屏，用户以为"点了没反应"）。
@@ -62,10 +63,14 @@ Etchelon/boardgamers viewer/uiqoo/Feuerland/BGG 等公开来源重建（约 300 
 ## 素材与校准（web 美术）
 
 - 素材在 `packages/web/public/assets/`（个人非商用，不进 git；`assets/README.md` 是法律声明，唯一被 track 的素材文件）。
-- **坐标校准一律写数据文件并配测试**：`sector-calibration.ts`（13 扇区统一 325/352.5/81.25，k0=4）、`ship-calibration.ts`（4 船）、`faction-calibration.ts`（族板模板+override）、`research-calibration.ts`（研究板，含 QIC_COVER_RECT）、`panel-calibration.ts`（种族飞船面板 3 穿梭机槽，全族同模板；顶槽印「3-4」仅 3-4 人局用）、`scoreboard-calibration.ts`（实图计分板：6 回合槽/2 终局槽/2 条计数轨/梯形片高级板槽）、`placements.ts`（运行时反推扇区摆放——GameState 不存 placement，按"2 格范围全覆盖 19 格的唯一格"定中心、按布局匹配定旋转；深空三角按内容多重集定面、带镜像旋转匹配定朝向）。
+- **坐标校准一律写数据文件并配测试**：`sector-calibration.ts`（13 扇区统一 325/352.5/81.25，k0=4）、`ship-calibration.ts`（4 船）、`faction-calibration.ts`（族板模板+override；bescods PI/学院互换、gleens 专属联邦片槽 gleensFedSlot=PI 右侧印刷徽章位）、`research-calibration.ts`（研究板，含 QIC_COVER_RECT）、`panel-calibration.ts`（种族飞船面板 3 穿梭机槽，全族同模板；顶槽印「3-4」仅 3-4 人局用）、`scoreboard-calibration.ts`（实图计分板：6 回合槽/2 终局槽/2 条计数轨/梯形片高级板槽）、`placements.ts`（运行时反推扇区摆放——GameState 不存 placement，按"2 格范围全覆盖 19 格的唯一格"定中心、按布局匹配定旋转；深空三角按内容多重集定面、带镜像旋转匹配定朝向）。
 - 图像处理脚本（裁透明边距/细白边/透视校正）在 `reference/harness/` 与 `.venv`（Pillow/PyMuPDF）。**用户自拍素材**（2026-09）：`cut-faction-panels.py` 从 05/06 照片抠 18 块种族飞船面板（含正反面配对校验，输出 `factions/panels/<id>.png` 400×1240）、`cut-scoreboard-assets.py` 从 01-04 照片抠计分板/梯形扩展片×2/QIC 覆盖板（含 alpha；原照片在 ~/Downloads，不入库）。
 - **四条船板图**：rebellion/eclipse 用 feuerland 官方渲染（2000×621 黑底）；twilight/tfmars 用 Steam TTS 模组（id 3347152196）内嵌官方渲染（3411×1050 黑底，`*_board_render.jpg`）——曾用 BGG 开箱照但背景灰（44-115 亮度）被用户投诉偏白，feuerland 官网确认无这两艘渲染（Wayback 佐证）。取图渠道备忘：BGG 图库可绕 Cloudflare（`api.geekdo.com/api/images?objectid=<id>&objecttype=thing&pageid=N` 列表 + `api/images/<imageid>` 单图）；Steam Workshop 文件用 `api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/` 免 key 拿 file_url。
 - LF 青/粉两色建筑无图：用红/蓝图 + CSS hue-rotate 近似。**青色要 hue-rotate(-65deg) 才与兰提达纯蓝区分**（-35deg 太接近曾被误认为同族）。
+- **AC_blue.png 素材偏色已修**（2026-09-20）：Etchelon 原图 hue≈263°（紫红，其他蓝色建筑均 ≈240°），用 `.venv` PIL HSV 的 H 通道 -16（≈-23°）平移修正（含 trim 版），现 hue=240°。修法：convert('HSV') → H.point((h-16)%256) → 保留 alpha 贴回；低饱和白边/黑描边不受影响。
+- **行动格盖片（action token，2026-09-21 系统性校准）**：素材 `markers/trim/ActionToken.png`（原图 182×149 透明边距大且非方形，trim 后 131×124 内容≈93%，`ACTION_TOKEN_IMAGE` 常量引用）；盖片渲染 width = 内容直径 ≈ 印刷八边形外径。尺寸表（PIL 颜色分割实测）：研究板 `ACTION_TOKEN_SIZE=0.084`（曾 0.034，灰化后完全看不出）；飞船 twilight 0.082 / tfmars 0.088 / rebellion 0.105 / eclipse 0.115（曾统一 ≈热区一半；rebellion/eclipse 的热区 actionSize 与 actionSpaces 中心也一并重测修正——feuerland 图格子相对图幅比 TTS 图大得多，0.055→0.11/0.12）。探索板特殊行动格（gleens +2 航距 / space-giants 2 免费步等印在面板中部的八边形）：`panel-calibration.ts` 的 `PANEL_SPECIAL_SLOT(0.49,0.39)/PANEL_SPECIAL_SIZE 0.44/PANEL_SPECIAL_ACTION`（族→行动 id 映射，仅列引擎已实现项），ExplorationBoard 渲染热区 + 已用盖片置灰 + 点击同「特殊行动」按钮（specialAvailable/onSpecialAction 与 PI 热区同口径透传）。preview 注入：研究板 power1/舰队格盖片 + gleens 面板已用/未用对照块。
+- **地图建筑白边**：BoardSvg `<defs>` 的 `#building-outline` filter（feMorphology dilate radius=1.2 user units + 白色 flood 垫底），应用于 hex-building/附加矿/gaiaformer/拖拽吸附预览；hue-rotate 在 image 自身 style.filter（先转色后由父 g 描边，白边不染）。
+- **研究轨玩家 token**：圆柱形（`.player-dot` 容器 + ::before 顶椭圆亮面 + ::after 柱身 brightness(0.72)，玩家色走 `--pc` CSS 变量），宽 `LEVEL_DOT_FRAC=0.28`（相对等级格容器）。
 
 ## 布局（v9 定稿）
 
@@ -77,6 +82,10 @@ Etchelon/boardgamers viewer/uiqoo/Feuerland/BGG 等公开来源重建（约 300 
 
 ## 踩过的坑（勿再犯）
 
+- **seq 双口径（2026-09-21，曾致撤销条整轮不显示）**：服务器 `action_applied.seq` = 行动**落库序号**（= 行动前快照 seq），`snapshot.seq` = 行动后计数（= 前者 +1）。web 端按"检查点以来我的行动"过滤日志时边界必须是 `e.seq >= checkpoint.seq`（`>` 会把自己的行动漏掉）；dismiss 记录也用行动日志口径（`lastMyActionSeq`）而非 `s.seq`。**测试模拟 emit 必须遵守真实口径**（action_applied seq = snapshot seq - 1）——填相同 seq 会把这类 bug 全掩盖。store 的 undo 日志裁剪（`e.seq < msg.seq`）本就同口径。
+- **盖亚机占据的星球他人不可建矿（2026-09-21 规则漏洞修复）**：`computeMineTarget` 曾只排 `hex.building/ship`，漏排 `hex.gaiaformerOf`——对手得以在留置盖亚机的绿星上建矿。规则依据：盖亚机是 structure，建矿要求 "empty (has no structures on it)"；参考引擎同口径（gaiaformer 的 hex 为 occupied，主人建矿走 GaiaFormer→Mine 回收路径）。修复 = 目标检查加 `hex.gaiaformerOf !== idx 时排除`（所有建矿路径共用 computeMineTarget，一处全覆盖）。**教训：对拍发现不了"我们多出的非法候选"**——行动序列来自参考记录，不会踩进多枚举的目标；枚举类校验只能补定向测试。
+- **联邦枚举必须覆盖子集合并解（2026-09-21 线上 bug：应有联邦时按钮全暗）**：旧策略只试单分量/两两合并/全体 MST，漏掉 3+ 分量部分合并（4+2+1=7 这类）。重写为分量子集枚举（≤12 分量护栏，超出回退旧策略）：pv ≥ 阈值且**极小**，连通卫星取 Steiner 最少树（TM 启发式）+ **删卫星后处理**。**极小性的终口径**（两经修正，fed-diff 对拍立功）：形状违规 ⟺ 存在某分量，去掉后剩余 pv 达标、连通、且卫星**严格更少**——规则书 920-923 原文"少 1 星球**且**少 1 卫星才算违规"，与参考 `isOutclassedBy` 同（曾误用"pv 富余即多余"与"卫星不增即多余"，均误删"桥"形状）。**fed-diff.ts**（harness 新成员）：同局面双枚举形状集对拍，12 局验证枚举完备（0 漏；多出候选均合法——参考组合枚举非全子集），用法与结论见 harness/NOTES.md §9。web 交互同步改为**两步式**：「组建联邦」→ 点卫星格（候选格高亮、已选蓝点；无匹配组合报原因；**「最少卫星」快捷按钮**——卫星数最少、并列时选卫星邻接未殖民星球最少的方案，减少未来建筑被吞并）→（同卫星集多组星球时再选组合）→ 选联邦片（选项按钮 + 研究板供应区/船上金框片可直接点）。
+- **随机命中型场景测试的脆弱性**：llm `heuristic-edge` 的 L5+flipToken 测试靠 `playUntil` 随机对局命中场景——联邦枚举变全后随机 AI 行为分布改变（组联邦稀释研究进度），场景系统性消失、换 seed 无效。场景类测试一律**定向构造**（手术改状态），随机命中只用于"必然出现"的宽泛条件。同理，后台起 server/web 等长驻任务必须 `disable_timeout`（600s 默认超时曾杀掉对局中的 server，落库重放可恢复）。
 - **静默拒绝**：服务器错误消息（not-your-turn/illegal-action）曾只写 `lastError` 不上屏。任何拒绝路径必须有可见反馈。
 - **下轮顺序**：曾按固定桌序推进回合，对拍发现应为 pass 顺序。
 - **setup 跳过**：ivits（无起始矿）、LF 新族（extra 阶段才放）、xenos（第 3 矿）、darkanians（extra 阶段）的队列推进靠 `settleSetupSkips` 容忍空枚举。**陷阱：该归一化只在 applyAction 后跑——开局无人触发，LF 新族/ivits 在 seat 0 时开局即死锁**；`GameSession` 构造（含 restore/undo 重放）必须先 `settleSetupSkips(newGame(config))`（曾致 JYMRE3 卡死）。
@@ -171,6 +180,14 @@ v2 数据（4p LF 固定池，2026-09-18 三轮调优+自我深搜后）：内�
 
 - LLM 决策链已实现但需 ANTHROPIC_API_KEY 才启用（预筛仍走 v1 scoreAction）。
 - Solo Automa 未实现（项目不做单人）。
-- Twilight 船板图来自 BGG 开箱照（非官方渲染）。
-- Tinkering tiles 只有合影图（未裁单块，面板用文字标签）。
 - 推进片池（BoostersStrip）位置用户后续还要调（当前在中央底部左侧）。
+
+## 2026-09-21 批量完成记录（原待办均已解决）
+
+- **2 人局科技片按人数**：基础 9 种供应 = `min(t.count, playerCount)`（setup 两处；参考引擎同口径）；船上科技片引擎本来就是"claims 模型"（`techTileClaims` 记已拿玩家、满人数才移除——功能即人数块），FleetPanel 渲染改为错落堆叠（剩余 = 人数 − claims 数，同研究板堆叠样式）。fuzz 守恒式按 9×人数+船上拷贝更新。
+- **事件日志全量**：server `GameSession.actionLog`（与 actions 表同步：restore/undo 重放重建、submitAction 追加）→ `snapshotFor` 带全量 `log` → protocol snapshot 加可选 `log` 字段 → web store 采用即替换（删除 LOG_CAPACITY 环形截断；import_game 复盘同样带 log）。
+- **盖片系统性校准**：研究板/4 船行动格盖片放大至印刷格外径（尺寸见素材章节）；特殊行动盖片补全——tech9/advtech3/11/13（TechBoosterStrip 片盖 token 置灰）、booster4/5（PanelBoosterStack 助推片）、ac2（PlayerMat ac2Slot）、gleens/space-giants 面板八边形（panel-calibration PANEL_SPECIAL_*）。**片上盖片定位**（`.tile-used-token`）：对准片上的行动格八边形图标而非角落——科技/高级横片锚点 (35%,44%) 宽 46%（八边形在左中，补偿 token 图 93% 内容填充后视觉等大）；助推竖片锚点 (50%,20%) 宽 64%（八边形在顶部；曾放右下角一半悬空被用户指出"歪"）。
+- **穿梭机按族色染色**：PIL 亮度映射预染 9 色（`lf/misc/shuttle/<color>.png`，`shuttleImage(color)`），ExplorationBoard 未派遣穿梭机与 FleetPanel 槽位穿梭机按座位族色选图。
+- **选族悬浮面板**：DraftView 种族按钮 hover/focus 显示右侧固定族板大图（`factionBoardImage`，moweyds 回退头像；pointer-events none 不挡操作）。
+- **Tinkering tiles 单图**：官方合影裁 6 块抠白底（`lf/misc/tinkering/tinkN.png`，`tinkeringTileImage`；内容映射 tink1=1步/tink2=4pw/tink3=1q/tink4=3步/tink5=3k/tink6=2q），ActionBar tinkering 选项按钮显示单图。
+- **Twilight/TF Mars 船板图**：早已换 TTS 模组官方渲染（3411×1050 黑底，ship-calibration 注释），旧"BGG 开箱照"条目过时删除。
