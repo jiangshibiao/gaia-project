@@ -1610,6 +1610,15 @@ select {
   pointer-events: none;
 }
 
+/* 次级候选（联邦卫星选择态里非最少方案的格）：弱显示不淹没视野，仍可点 */
+.hex-highlight.dim {
+  fill: #58a6ff14;
+  stroke: #8fd8ff66;
+  stroke-width: 1.5;
+  filter: none;
+  animation: none;
+}
+
 @keyframes glow {
   50% { stroke-opacity: 0.45; }
 }

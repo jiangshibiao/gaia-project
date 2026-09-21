@@ -111,6 +111,8 @@ export interface BoardSvgProps {
   state: FilteredState;
   /** 当前选中行动类型的可选 hex（发光描边 + 可点）。 */
   highlights?: ReadonlySet<HexKey> | undefined;
+  /** 次级候选 hex（弱高亮，同样可点：联邦卫星选择态里非最少方案的格）。 */
+  dimHighlights?: ReadonlySet<HexKey> | undefined;
   /** 行动红框 hex（~5s 的提示性红框，不可点；建矿位/触发格等）。 */
   flashHexes?: readonly HexKey[] | undefined;
   onHexClick?: ((hex: HexKey) => void) | undefined;
@@ -271,7 +273,7 @@ function DeepSpaceLayer({ placements }: { placements: MapPlacements }): ReactEle
   );
 }
 
-export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function BoardSvg({ state, highlights, flashHexes, onHexClick, onShipClick, snapPreview, selectedHexes, suppressHover }, ref): ReactElement {
+export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function BoardSvg({ state, highlights, dimHighlights, flashHexes, onHexClick, onShipClick, snapPreview, selectedHexes, suppressHover }, ref): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -571,6 +573,8 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
   
           {entries.map(({ key, hex, x, y }) => {
             const highlighted = highlights?.has(key) === true;
+            const dim = !highlighted && dimHighlights?.has(key) === true;
+            const clickable = highlighted || dim;
             const hasArt = artCovered.has(key);
             const projectOwner = gaiaProjects.get(key);
             return (
@@ -693,7 +697,7 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                   </g>
                 ) : null}
                 {highlighted ? (
-                  <polygon className="hex-highlight" points={hexPoints(0, 0, HEX_SIZE - 1)} />
+                  <polygon className={`hex-highlight${dim ? ' dim' : ''}`} points={hexPoints(0, 0, HEX_SIZE - 1)} />
                 ) : null}
                 {flashHexes?.includes(key) === true ? (
                   <polygon className="hex-flash" data-testid={`hex-flash-${key}`} points={hexPoints(0, 0, HEX_SIZE - 1)} />
@@ -711,10 +715,10 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                   />
                 ) : null}
                 <polygon
-                  className={`hex-hit${highlighted ? ' clickable' : ''}`}
+                  className={`hex-hit${clickable ? ' clickable' : ''}`}
                   points={hexPoints(0, 0, HEX_SIZE - 1)}
                   onClick={
-                    highlighted && onHexClick !== undefined
+                    clickable && onHexClick !== undefined
                       ? () => onHexClick(key)
                       : hex.ship !== undefined && onShipClick !== undefined
                         ? () => onShipClick(hex.ship as ShipId)

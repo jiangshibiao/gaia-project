@@ -152,6 +152,22 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     () => new Set<HexKey>([...fedSatGroups.values()].flatMap((g) => g.satellites)),
     [fedSatGroups],
   );
+  /** 卫星数最少形状的卫星格（强高亮）；其余候选格（弱高亮，不再一条斜线淹没视野）。 */
+  const { fedSatBest, fedSatRest } = useMemo(() => {
+    let minLen = Infinity;
+    for (const g of fedSatGroups.values()) {
+      minLen = Math.min(minLen, g.satellites.length);
+    }
+    const best = new Set<HexKey>();
+    const rest = new Set<HexKey>();
+    for (const g of fedSatGroups.values()) {
+      for (const h of g.satellites) {
+        (g.satellites.length === minLen ? best : rest).add(h);
+      }
+    }
+    for (const h of best) rest.delete(h);
+    return { fedSatBest: best, fedSatRest: rest };
+  }, [fedSatGroups]);
   /** 最少卫星快捷方案：候选形状中卫星数最少；数量并列时选"卫星格邻接的未殖民星球
       最少"的——之后在那些星球上建矿会被吞并进该联邦（参考 addBuildingToNearbyFederation），
       不利于再组新联邦，故越少越有利。 */
@@ -310,15 +326,17 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     undoBarVisible && meNow !== undefined && meThen !== undefined ? describeDelta(meThen, meNow) : [];
 
   const question = selection !== null ? currentQuestion(selection) : null;
-  // 高亮优先级：拖拽落点 > 联邦卫星选择态 > 选择机的 hex 问题目标
+  // 高亮优先级：拖拽落点 > 联邦卫星选择态 > 选择机的 hex 问题目标；
+  // 联邦卫星选择态：最少卫星数形状的格强高亮，其余候选格弱高亮（仍可点）
   const highlights =
     drag !== null
       ? drag.plan.targets
       : fedStage?.stage === 'satellites'
-        ? fedSatOptions
+        ? fedSatBest
         : selection !== null
           ? hexTargets(selection)
           : undefined;
+  const dimHighlights = fedStage?.stage === 'satellites' ? fedSatRest : undefined;
   /** 当前选择问题的可选值集合（ResearchBoard / BoostersStrip 命中高亮用）。 */
   const activeOptions =
     question !== null
@@ -526,6 +544,7 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
               ref={boardRef}
               state={state}
               highlights={highlights}
+              dimHighlights={dimHighlights}
               flashHexes={flash?.hexes}
               onHexClick={onHexClick}
               selectedHexes={fedStage?.stage === 'satellites' ? new Set(fedStage.selected) : undefined}
