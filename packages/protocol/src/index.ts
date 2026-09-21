@@ -147,7 +147,7 @@ export type ServerMessage =
   | { type: 'room_state'; protocolVersion: number; room: RoomState; yourSeat: PlayerIndex | null } // 广播安全：绝不含 token
   | { type: 'draft_state'; protocolVersion: number; draft: DraftState } // 种族选取阶段状态（广播安全）
   | { type: 'credentials'; protocolVersion: number; seat: PlayerIndex; token: string } // 仅 create/join/resume 时单发给本人
-  | { type: 'snapshot'; protocolVersion: number; seq: number; state: FilteredState; legalActions: Action[] } // legalActions 仅"当前应行动座位"非空
+  | { type: 'snapshot'; protocolVersion: number; seq: number; state: FilteredState; legalActions: Action[]; log?: { seq: number; player: PlayerIndex; action: Action }[] } // legalActions 仅"当前应行动座位"非空；log = 全量行动日志（事件日志完整历史）
   | { type: 'action_applied'; protocolVersion: number; seq: number; player: PlayerIndex; action: Action; events: unknown[]; reason?: string; degraded?: boolean } // reason：AI 决策理由（真人行动无此字段）；degraded=true：非 LLM 降级路径（启发式/兜底）
   | { type: 'ai_thinking'; protocolVersion: number; seat: PlayerIndex; thinking: boolean } // AI 决策中指示（true→false 成对）
   | { type: 'game_over'; protocolVersion: number; winner: PlayerIndex[]; finalScores: number[] } // finalScores = 终局 state.players[].vp 按座位序

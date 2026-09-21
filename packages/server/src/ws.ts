@@ -207,6 +207,7 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
         seq: snap.seq,
         state: snap.state,
         legalActions: snap.legalActions,
+        log: snap.log,
       });
     }
   }
@@ -702,6 +703,7 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
         seq: snap.seq,
         state: snap.state,
         legalActions: snap.legalActions,
+        log: snap.log,
       });
       broadcastRoomState(entry.room);
       // resume 重触发 driveAI（幂等，守卫防重入）——对局若停在 AI 回合则被唤醒
@@ -845,10 +847,14 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
       throw new WsError('invalid-seat', `座位 ${String(msg.seat)} 越界`);
     }
     let finalState;
+    let importLog: { seq: number; player: PlayerIndex; action: Action }[];
     try {
       let s = newGame(rec.config);
+      importLog = [];
       for (const action of rec.actions) {
+        const a = actorOf(s);
         s = applyAction(s, action);
+        importLog.push({ seq: importLog.length, player: (a ?? 0) as PlayerIndex, action });
       }
       finalState = s;
     } catch (e) {
@@ -864,6 +870,7 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
         actor !== null && actor === seat && finalState.phase !== 'game-over'
           ? enumerateActions(finalState, seat)
           : [],
+      log: importLog,
     });
   }
 

@@ -60,6 +60,8 @@ export interface Snapshot {
   seq: number;
   state: FilteredState;
   legalActions: Action[];
+  /** 全量行动日志（开局到当前，seq 升序；事件日志完整历史用）。 */
+  log: { seq: number; player: PlayerIndex; action: Action }[];
 }
 
 /** 'g_' + 8 字节 base64url（11 字符），crypto 随机。测试里应显式传 gameId。 */
@@ -74,6 +76,8 @@ export class GameSession {
   private readonly aiSeats: ReadonlySet<PlayerIndex>;
   private gameState: GameState;
   private seq = 0;
+  /** 全量行动日志（与 actions 表同步：新开为空、restore/undo 重放重建、submitAction 追加）。 */
+  private actionLog: { seq: number; player: PlayerIndex; action: Action }[] = [];
 
   constructor(
     db: Db,
@@ -145,10 +149,11 @@ export class GameSession {
       { persist: false, roomConfig: game.config.room },
     );
     try {
-      for (const { player, action } of listActions(db, gameId)) {
+      for (const { seq, player, action } of listActions(db, gameId)) {
         // 数据完整性校验：行动者必须是当时应行动的玩家
         if (player !== actorOf(session.gameState)) return null;
         session.gameState = applyAction(session.gameState, action);
+        session.actionLog.push({ seq, player, action });
         session.seq += 1;
       }
     } catch {
@@ -208,6 +213,7 @@ export class GameSession {
     appendAction(this.db, this.gameId, this.seq, seat, action);
     this.gameState = next;
     const applied = this.seq;
+    this.actionLog.push({ seq: applied, player: seat, action });
     this.seq += 1;
     if (this.finished) {
       finishGame(this.db, this.gameId, this.gameState);
@@ -242,18 +248,22 @@ export class GameSession {
     if (lastMyAction < 0) {
       throw new SessionError('nothing-to-undo', '还没有可撤销的行动');
     }
-    // 资格：该行动之后不得有其他真人座位的行动
+    // 资格：该行动之后不得有其他真人座位的行动（被动充能响应除外——随主行动一并回退，
+    // 即撤销者撤回时，已蹭能量的玩家也同步还原）
     for (const a of actions.slice(lastMyAction + 1)) {
-      if (a.player !== seat && !this.aiSeats.has(a.player as PlayerIndex)) {
-        throw new SessionError('undo-unavailable', '对手已响应/行动，当前不能撤销');
-      }
+      if (a.player === seat || this.aiSeats.has(a.player as PlayerIndex)) continue;
+      if (a.action.type === 'charge' || a.action.type === 'decline-charge') continue;
+      throw new SessionError('undo-unavailable', '对手已响应/行动，当前不能撤销');
     }
     deleteActionsFrom(this.db, this.gameId, lastMyAction);
     let rebuilt = settleSetupSkips(newGame(this.gameState.config));
+    const kept: { seq: number; player: PlayerIndex; action: Action }[] = [];
     for (const a of actions.slice(0, lastMyAction)) {
       rebuilt = applyAction(rebuilt, a.action);
+      kept.push({ seq: a.seq, player: a.player as PlayerIndex, action: a.action });
     }
     this.gameState = rebuilt;
+    this.actionLog = kept;
     this.seq = lastMyAction;
     return { seq: lastMyAction };
   }
@@ -268,6 +278,7 @@ export class GameSession {
         !this.finished && seat === actorOf(this.gameState)
           ? enumerateActions(this.gameState, seat)
           : [],
+      log: this.actionLog,
     };
   }
 

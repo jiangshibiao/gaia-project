@@ -8,7 +8,8 @@
  *   connect 即自动 resume；双标签页用 owner 标记（`gaia:owner:<code>`）判定接管，
  *   避免两标签互踢；resume 被拒（invalid-token / session-lost）→ 清 session 回大厅。
  *
- * 日志：action_applied 流环形缓冲，保留最新 LOG_CAPACITY 条；
+ * 日志：action_applied 流全量保留（事件日志完整历史；快照带全量 log 时直接采用，
+ * 重连/undo 后与服务器一致；服务器 session 内存日志与 actions 表同步）；
  * ai_thinking 维护 thinkingSeats；AI 行动的 reason/degraded 进 LogEntry。
  *
  * 导入/导出与复盘：
@@ -236,8 +237,6 @@ export interface GameStoreState {
   /** 复盘回放状态（非 null = 复盘模式，App 路由到 ReviewScreen）。 */
   review: ReviewState | null;
 }
-
-export const LOG_CAPACITY = 200;
 
 const INITIAL_STATE: GameStoreState = {
   connection: 'disconnected',
@@ -642,8 +641,14 @@ export class GameStore {
           seq: msg.seq,
           // 对局开始（draft_confirm / random 直开）后不再处于 draft 阶段
           draft: null,
-          // 撤销回归（undo 后 seq 变小）：行动日志同步裁剪，被回退的行动不再展示
-          log: msg.seq < this.state.seq ? this.state.log.filter((e) => e.seq < msg.seq) : this.state.log,
+          // 事件日志全量：服务器快照带全量行动日志时直接采用（开局/重连/undo 后
+          // 天然一致）；无 log 字段（旧协议）退回本地 undo 裁剪逻辑
+          log:
+            msg.log !== undefined
+              ? msg.log.map((e) => ({ seq: e.seq, player: e.player, action: e.action, events: [] }))
+              : msg.seq < this.state.seq
+                ? this.state.log.filter((e) => e.seq < msg.seq)
+                : this.state.log,
           // 终局快照（resume 已终局对局/重启恢复）：从状态推导 gameOver，
           // 否则只靠 game_over 消息，刷新后胜者横幅会丢
           gameOver:
@@ -664,7 +669,7 @@ export class GameStore {
           ...(msg.reason !== undefined ? { reason: msg.reason } : {}),
           ...(msg.degraded !== undefined ? { degraded: msg.degraded } : {}),
         };
-        this.patch({ log: [...this.state.log, entry].slice(-LOG_CAPACITY) });
+        this.patch({ log: [...this.state.log, entry] });
         break;
       }
       case 'ai_thinking': {

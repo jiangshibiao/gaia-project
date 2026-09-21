@@ -5,8 +5,9 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION, filterStateFor } from '@gaia/protocol';
+import { newGame } from '@gaia/engine';
 import type { GameRecord } from '@gaia/protocol';
-import { GameClient, GameStore, LOG_CAPACITY, useGameStore } from './store';
+import { GameClient, GameStore, useGameStore } from './store';
 import {
   FakeStorage,
   FakeWebSocket,
@@ -93,12 +94,12 @@ describe('GameStore 状态迁移', () => {
     expect(s.seq).toBe(7);
   });
 
-  it(`action_applied 追加日志，环形缓冲保留最新 ${LOG_CAPACITY} 条`, () => {
+  it('action_applied 追加日志：全量保留（事件日志完整历史，不再环形截断）', () => {
     const { store } = setup();
     store.connect();
     const ws = lastWs();
     ws.open();
-    for (let i = 0; i < LOG_CAPACITY + 5; i++) {
+    for (let i = 0; i < 205; i++) {
       ws.emit({
         type: 'action_applied',
         protocolVersion: PROTOCOL_VERSION,
@@ -109,9 +110,32 @@ describe('GameStore 状态迁移', () => {
       });
     }
     const log = store.getState().log;
-    expect(log).toHaveLength(LOG_CAPACITY);
-    expect(log[0]?.seq).toBe(5);
-    expect(log[LOG_CAPACITY - 1]?.seq).toBe(LOG_CAPACITY + 4);
+    expect(log).toHaveLength(205);
+    expect(log[0]?.seq).toBe(0);
+    expect(log[204]?.seq).toBe(204);
+  });
+
+  it('snapshot 带全量 log 时直接采用（重连/undo 后与服务器一致）', () => {
+    const { store } = setup();
+    store.connect();
+    const ws = lastWs();
+    ws.open();
+    const game = newGame({ playerCount: 2, seed: 1, factions: ['terrans', 'xenos'], lostFleet: true });
+    ws.emit({
+      type: 'snapshot',
+      protocolVersion: PROTOCOL_VERSION,
+      seq: 2,
+      state: filterStateFor(game),
+      legalActions: [],
+      log: [
+        { seq: 0, player: 0, action: { type: 'place-initial-mine', hex: '0,0' } },
+        { seq: 1, player: 1, action: { type: 'place-initial-mine', hex: '1,0' } },
+      ],
+    });
+    const log = store.getState().log;
+    expect(log).toHaveLength(2);
+    expect(log[0]?.player).toBe(0);
+    expect(log[1]?.action.type).toBe('place-initial-mine');
   });
 
   it('game_over 记录 winner 与 finalScores；error 记录 lastError', () => {
