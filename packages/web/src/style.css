@@ -2172,6 +2172,9 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 堆叠 img 全部 absolute（.stack-tile），容器必须显式定高——否则高度塌陷，
+     整叠从槽位中心向下铺开（大屏/2 人局人数块堆叠时曾显著下滑） */
+  aspect-ratio: 178 / 134;
 }
 
 .ship-tech .tile-img {
