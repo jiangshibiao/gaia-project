@@ -184,6 +184,8 @@ v2 数据（4p LF 固定池，2026-09-18 三轮调优+自我深搜后）：内�
 
 ## 2026-09-21 批量完成记录（原待办均已解决）
 
+- **moweyds 高清族板图已补**（BGG 396802 西班牙版开箱照 9503664 下半块 Octopoides，2950×1879，与 9503663 同组照片同版型，PlayerMat 共用 LF_PHOTO 标定仅另给宽高比；曾误用的 wellplayed 图实为 space-giants 板已撤删；fetch-assets.mjs 改走 CROPS 裁剪可重建；2 人局固定不用叛乱号系规则原文非 bug——2 人局规则明示移除 Rebellion，「3Q 换科技片」是其专属行动格）。选族悬浮面板（DraftView draft-hover-pop）右侧并放该族飞船板块图（仅 LF 局；族板/飞船板块同高 min(357px,24.3vw)，宽度自适应）。
+
 - **2 人局科技片按人数**：基础 9 种供应 = `min(t.count, playerCount)`（setup 两处；参考引擎同口径）；船上科技片引擎本来就是"claims 模型"（`techTileClaims` 记已拿玩家、满人数才移除——功能即人数块），FleetPanel 渲染改为错落堆叠（剩余 = 人数 − claims 数，同研究板堆叠样式）。fuzz 守恒式按 9×人数+船上拷贝更新。
 - **事件日志全量**：server `GameSession.actionLog`（与 actions 表同步：restore/undo 重放重建、submitAction 追加）→ `snapshotFor` 带全量 `log` → protocol snapshot 加可选 `log` 字段 → web store 采用即替换（删除 LOG_CAPACITY 环形截断；import_game 复盘同样带 log）。
 - **盖片系统性校准**：研究板/4 船行动格盖片放大至印刷格外径（尺寸见素材章节）；特殊行动盖片补全——tech9/advtech3/11/13（TechBoosterStrip 片盖 token 置灰）、booster4/5（PanelBoosterStack 助推片）、ac2（PlayerMat ac2Slot）、gleens/space-giants 面板八边形（panel-calibration PANEL_SPECIAL_*）。**片上盖片定位**（`.tile-used-token`）：对准片上的行动格八边形图标而非角落——科技/高级横片锚点 (35%,44%) 宽 46%（八边形在左中，补偿 token 图 93% 内容填充后视觉等大）；助推竖片锚点 (50%,20%) 宽 64%（八边形在顶部；曾放右下角一半悬空被用户指出"歪"）。
@@ -191,3 +193,33 @@ v2 数据（4p LF 固定池，2026-09-18 三轮调优+自我深搜后）：内�
 - **选族悬浮面板**：DraftView 种族按钮 hover/focus 显示右侧固定族板大图（`factionBoardImage`，moweyds 回退头像；pointer-events none 不挡操作）。
 - **Tinkering tiles 单图**：官方合影裁 6 块抠白底（`lf/misc/tinkering/tinkN.png`，`tinkeringTileImage`；内容映射 tink1=1步/tink2=4pw/tink3=1q/tink4=3步/tink5=3k/tink6=2q），ActionBar tinkering 选项按钮显示单图。
 - **Twilight/TF Mars 船板图**：早已换 TTS 模组官方渲染（3411×1050 黑底，ship-calibration 注释），旧"BGG 开箱照"条目过时删除。
+
+## 2026-09-22 批量完成记录（二）
+
+- **同座位多连接共存（接管机制废除）**：ws.ts 删 `kickSeatConns`（resume 不再踢同座旧连接，`handleDisconnect` 仅当该座位最后一条连接断开才标离线、广播照旧每连接各自发快照）；web store 删 owner 标记/`takenOver`/`reclaim`（被动 close 一律自动重连），App.tsx 删接管画面。两地同控一座位两端同步可用；服务器重启后客户端静默恢复。**注意：旧 server（kick 版）下用脚本 resume 他人 token 会把其客户端踢进接管画面（stale）——新 server 已无此问题。**
+- **收入充能顺序玩家决策（pending income-order）**：充能口径为 **I→II 优先**（用户明确定口径："魔力必须是 1 全转完 2 才能 2 转 3"；曾短暂改 II→III 优先连跳追求 III 最大化，实战反馈违反直觉已回退）。触发条件（turn.ts `incomeOrderNeedsDecision`）：收入同时含 token+充能、充能 > II 区 token（顺序才有差异）且加完 token 也转不满（容量 2×I+II）；满足则资源先结、token/充能压入 `state.incomeQueue` 逐个置 pending，玩家二选一（**先拿豆还是先转魔力**，actions/income.ts；用户："收入阶段先获得魔力豆还是先转魔力是可自定义的"）。`apply.ts settleIncomeSkips`：非 income-order 行动到来时按 tokens-first 自动冲刷（旧日志重放/失同步兼容，冲刷连带跑盖亚阶段）。UI：ActionBar pending 条双按钮（显示当前三区分布）；AI 默认 tokens-first；撤销条豁免（轮初响应类）。**注意 ambas 案例**：该口径下 III 上限是 4（用户曾算 5——那需要同一 token 一次充能动两格的连跳；若用户再提，连跳规则待与规则书/参考引擎核实后再议）。
+- **gain-tech-tile 升 L5 flipToken 丢失修复**（枚举↔apply 一致性潜伏 bug，replay 轨迹变化暴露）：pending.ts 枚举映射曾丢 `choice.research.flipToken`，导致枚举出无 flipToken 的 L5 推进、apply 抛 no-flippable-token 崩对局；已补映射 + 回归测试。
+- **先手洗牌**：引擎 `GameConfig.turnOrder`（初始行动顺序，缺省座位序，校验排列）；server `drawTurnOrder`（种子派生洗牌，异或常数与抽族流去相关）——random/draft 两模式共用，draft 顺位即对局行动顺序；规则依据 "Determine a first player using the method of your choice"。**曾固定座位 0 先手（用户反馈）。**
+- **选族界面 setup 信息区**：`DraftState.preview`（server 用占位族 + 同种子 `buildDraftPreview` 重建局面——引擎 newGame 的 rng 消耗序为 板块→地图→种族抽取，前两项与种族无关故逐格一致）；DraftView 显示 顺位（先手标注）/ 回合计分片 / 终局计分片 / 地图预览（BoardSvg）。规则依据：规则书 setup 先摆图后选族。
+- **探索飞船合并射程加成候选**（gleens +2 航距到不了 TF Mars 复盘）：`exploreCandidates` = 普通 explore-ship + 射程加成特殊行动（gleens-range/booster5/ship-range3）的 ship 目标，同船已有普通候选则去重；FleetPanel 探索按钮与「探索飞船」类别同口径（`canExploreShip`）。注：此前飞船路径本身合法（用户卡点 = 加成候选只在特殊行动流里），ship-terraform-step 费用模型（免 gaia 费/排除 asteroid）经核为参考引擎原文行为（spaceship-actions.ts），lantids (1,2) proto 经船恰好付得起（7o）——均非 bug。
+- **bescods 族板能力八边形热区**：faction-calibration 加 `specialSlot`（bescods 右上印刷八边形 0.867,0.219）+ PlayerMat `BOARD_SPECIAL_ACTION`（bescods→bescods-up），热区/已用盖片/onSpecialTile 直提与面板八边形同口径。
+- **moweyds/tinkeroids 3 铲星球标注**：faction-calibration `threeStepSlots`（轮盘下三小格，两族分别实测），PlayerMat 按 `p.terraformThreeStep` 渲染 PLANET_COLORS 色块。
+- **盖亚机放大**：`GAIAFORMER_WIDTH` 0.062→0.078（棋子图内容占比仅 ~42%，现可见内容 ≈ 槽位八边形）。
+- **代客操作脚本**（reference/harness/，gitignored）：`admin-undo.ts`（读库取 token → resume+undo）、`admin-submit.ts`（代提交行动）；探针若干（probe-lantids-mine / probe-gleens-explore / probe-explore-candidates / probe-charge-fixtures / probe-turnorder 等）。
+
+## 2026-09-22 批量完成记录（三）
+
+- **充能口径回退**：`chargePower` 全局 **I→II 优先**（用户明确定口径"魔力必须 1 全转完 2 才能 2 转 3"；曾改 II→III 优先连跳被实战否决）。**注意重放副作用**：改口径后服务器重启重放会用当时口径重算全部历史充能——玩家看到的分布会随口径切换变化（本次正是如此暴露）。ambas 案例（III 4 vs 5）若再提：5 需要同一 token 一次充能动两格（连跳），规则口径待与规则书核实。
+- **撤销条改服务器资格镜像、不再依赖内存检查点**（GameScreen）：可见性 = 日志里我最后一个回合内行动（主行动/免费/setup，排除 charge/decline/pass/轮初响应）存在 + 其后无其他真人非响应行动（与 session.undo 尾段校验一致；pass 也算阻挡）+ 未收起；检查点仅用于增量显示与"未进新一轮"判定。修复刷新/重连丢检查点导致的"建造后无撤销按钮"。用户答疑：自己撤销条在对手真人回合内行动后消失是设计如此（服务器必拒）；对手充能响应不会让它消失。
+- **moweyds 族板矿行单独校准**（faction-calibration）：矿行印刷与 darkanians 不同（实测槽 x 起始 0.1578 间距 0.0485 vs LF_PHOTO 0.1707/0.0506），mineSlots 单独给值；TS/实验室/PI/学院行实测与 LF_PHOTO 一致不动。
+- **能量环可视化**：moweyds-ring 在地图 hex 渲染改为贴近六边形边缘的醒目蓝环（深底 #0b1c2c 0.15 + 亮蓝 #3fa8ff 0.085，r=0.80×HEX_SIZE；powerring.png 实物图太暗弃用）。
+- **圣器并入版图下方横条**（TechBoosterStrip 末尾，曾独立一行在资源条下）：`.tech-booster-strip .tile-img.artifact` 与科技片同高（0.7528×--rb-tile-w）宽按原图比例（344×265）。
+- **盖亚机放大**（前条）：`GAIAFORMER_WIDTH` 0.062→0.078（棋子内容占比仅 42%，现可见内容≈槽位八边形）。
+
+## 2026-09-22 批量完成记录（四）
+
+- **回合完成闸（turnHold，"等他彻底完成才亮"）**：非 pass 主行动及其 pending 全部响应完毕后，advanceTurn 照常推进 currentPlayerIdx，但 `state.turnHold` 置为行动者——actorOf/枚举只认持闸玩家（免费兑换/烧脑/`confirm-turn`），**下一玩家按钮不亮**；`confirm-turn` 放闸（不推进，闸已在主行动时推进过）。pass 直接推进不设闸。web：撤销条[完成]改提交 confirm-turn（兼本地收起）；ActionBar 新增 turnhold-banner「完成回合」常驻入口（撤销条被收起也能放闸）；最近行动行跳过 confirm-turn。兼容：`apply.ts settleTurnHoldSkips`（非持闸玩家行动自动放闸，旧日志重放/失同步）+ server restore/undo 重放循环同口径放闸并**仅在非持闸玩家行动时给免费行动注入库中 player 列**（否则缺省行为人会误归持闸玩家；持闸玩家自己的免费行动不注入——actor 字段会改变 stableStringify 破坏合法性比对）。AI：RandomAgent/各测试驱动 actingPlayer 补 turnHold；selfsearch 深搜 `skipTurnHold`（confirm-turn 是记账步骤，自动跳过保持搜索语义）；lookahead `stillMyTurn` 认闸（主行动后的免费行动次动分恢复触发）。**注意**：此类语义闸改动会让重放口径变化——server restore 的 player≠actorOf 完整性校验与合法性 stableStringify 比对是两个必经兼容点。
+- **ac2 八角片热点**：faction-calibration 加 `ac2ActionSlot`（基础板实测 (0.636,0.60) 在学院槽正下方；LF 板与槽同心回退 ac2Slot），PlayerMat 已建成未用 → 热点直发（onSpecialTile('ac2')），已用盖片同步移到八边形位（曾错放在学院槽）。
+- **探索板特殊八角片直进**：ExplorationBoard 特殊格改走 onSpecialTile（曾走通用「特殊行动」菜单——点格伦 +2 还得再选一次 +2 片）；PanelBoosterStack 透传。
+- **撤销条改服务器资格镜像**（前条补充）：修复刷新/重连丢检查点导致的"建造后无撤销按钮"。
+- **盖片系统补全**：PI 技能已用盖片（PlayerMat `PI_SPECIAL_ACTION`：moweyds-ring/ambas-swap/firaks-down/ivits-sp/tinkeroids-tile，specialUsed/roundAbilityUsed 双口径，盖在 piSlot）；格伦 +2 等面板八边形盖片复查正常（ExplorationBoard specialUsed 驱动；**回合结束 specialUsed/roundAbilityUsed 清空属正常——盖片消失=能力刷新**）。

@@ -57,11 +57,14 @@ export interface DrivenGame {
 /** 与 playGame 同一防御上限：正常对局远小于此，超限即引擎死循环。 */
 const MAX_STEPS = 100_000;
 
-/** 当前应行动的玩家（与 engine playGame 同口径：pending 响应者 > setup 队首 > 当前回合玩家）。 */
+/** 当前应行动的玩家（与 engine playGame 同口径：pending 响应者 > turnHold 持闸 > setup 队首 > 当前回合玩家）。 */
 function actingPlayer(state: GameState): PlayerIndex {
   const pending = state.pending;
   if (pending !== null) {
     return pending.kind === 'charge' ? pending.queue[0]!.player : pending.player;
+  }
+  if (state.turnHold !== null) {
+    return state.turnHold;
   }
   if (state.phase === 'setup') {
     return state.setupQueue[0]!;

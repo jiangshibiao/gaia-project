@@ -775,6 +775,11 @@ export function scoreAction(state: GameState, seat: PlayerIndex, action: Action)
       if (t === null) return 0;
       return scoreBuildMine(state, seat, action.hex) + t.ore + t.credits + t.qic * RESOURCE_VALUE.qic;
     }
+    case 'income-order':
+      // tokens-first 通常 III 区更多（新 token 参与充能），微优
+      return action.order === 'tokens-first' ? 0.2 : 0;
+    case 'confirm-turn':
+      return 0;
   }
 }
 

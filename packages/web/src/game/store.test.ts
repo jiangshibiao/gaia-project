@@ -1,6 +1,6 @@
 /**
  * GameClient / GameStore 单测（M2c）：FakeWebSocket 注入替代原生 ws——
- * 连接/建房/收快照/提交行动/断线重连自动 resume/token 持久化/双标签接管。
+ * 连接/建房/收快照/提交行动/断线重连自动 resume/token 持久化/同座位多连接共存。
  */
 import { renderHook, act } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -36,7 +36,6 @@ describe('GameStore 状态迁移', () => {
     expect(s.seq).toBe(0);
     expect(s.log).toEqual([]);
     expect(s.gameOver).toBeNull();
-    expect(s.takenOver).toBe(false);
   });
 
   it('connect → connecting；ws open → connected', () => {
@@ -457,69 +456,39 @@ describe('GameStore token 持久化与恢复', () => {
   });
 });
 
-describe('GameStore 双标签页接管', () => {
-  it('被动 close 且 owner 标记为他 tab 新鲜值 → takenOver，停止自动重连', async () => {
+describe('GameStore 同座位多连接共存', () => {
+  it('被动 close 一律自动重连（无接管态；重连后 open 自动 resume）', async () => {
     const storage = new FakeStorage();
-    const { store } = setup(0, { storage, tabId: 'tab-A' });
+    const { store } = setup(0, { storage });
     const ws = enterRoom(store);
-    // 另一标签页用同 token resume：先写自己的 owner 标记，服务器随后踢掉本连接
-    storage.setItem('gaia:owner:ABCD', JSON.stringify({ tabId: 'tab-B', at: Date.now() }));
+    // 另一标签页用同 token 连上（服务端不再踢人）：本连接被服务端断开也直接重连
     ws.serverClose();
     await tick();
-    const s = store.getState();
-    expect(s.takenOver).toBe(true);
-    expect(s.connection).toBe('disconnected');
-    expect(FakeWebSocket.instances).toHaveLength(1); // 没有自动重连
-  });
-
-  it('reclaim 重新接管：重连并自动 resume，takenOver 解除', async () => {
-    const storage = new FakeStorage();
-    const { store } = setup(0, { storage, tabId: 'tab-A' });
-    const ws = enterRoom(store);
-    storage.setItem('gaia:owner:ABCD', JSON.stringify({ tabId: 'tab-B', at: Date.now() }));
-    ws.serverClose();
-    await tick();
-    expect(store.getState().takenOver).toBe(true);
-    store.reclaim();
+    expect(FakeWebSocket.instances).toHaveLength(2); // 已自动重连（connecting 中）
     const ws2 = lastWs();
-    expect(ws2).not.toBe(ws);
     ws2.open();
     expect(ws2.lastSent()).toEqual({
       type: 'resume',
       protocolVersion: PROTOCOL_VERSION,
       token: 'tok-A',
     });
-    expect(store.getState().takenOver).toBe(false);
-  });
-
-  it('owner 标记过期（他 tab 早已关闭）→ 视为普通断线，照常自动重连', async () => {
-    const storage = new FakeStorage();
-    const { store } = setup(0, { storage, tabId: 'tab-A' });
-    const ws = enterRoom(store);
-    storage.setItem('gaia:owner:ABCD', JSON.stringify({ tabId: 'tab-B', at: Date.now() - 60_000 }));
-    ws.serverClose();
-    await tick();
-    expect(store.getState().takenOver).toBe(false);
-    expect(FakeWebSocket.instances).toHaveLength(2); // 已自动重连
   });
 });
 
 describe('GameStore leaveRoom（返回大厅）', () => {
-  it('清空持久化 token/owner、重置状态、并以干净身份重连', () => {
+  it('清空持久化 token、重置状态、并以干净身份重连', () => {
     const storage = new FakeStorage();
-    const { store } = setup(0, { storage, tabId: 'tab-A' });
+    const { store } = setup(0, { storage });
     enterRoom(store);
     expect(storage.getItem('gaia:token:ABCD')).toBe('tok-A');
     store.leaveRoom();
     expect(storage.getItem('gaia:token:ABCD')).toBeNull();
-    expect(storage.getItem('gaia:owner:ABCD')).toBeNull();
     const s = store.getState();
     expect(s.token).toBeNull();
     expect(s.room).toBeNull();
     expect(s.seat).toBeNull();
     expect(s.snapshot).toBeNull();
     expect(s.gameOver).toBeNull();
-    expect(s.takenOver).toBe(false);
     // 干净身份重连：新 ws，open 后不发 resume
     const ws = lastWs();
     ws.open();

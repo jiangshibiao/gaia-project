@@ -119,10 +119,17 @@ export function newGame(config: GameConfig): GameState {
     }
   }
 
-  const turnOrder: PlayerIndex[] = players.map((_, i) => i);
+  const turnOrder: PlayerIndex[] = config.turnOrder ?? players.map((_, i) => i);
 
   return {
-    config: { playerCount: config.playerCount, seed: config.seed, factions: [...config.factions], lostFleet, startingVp },
+    config: {
+      playerCount: config.playerCount,
+      seed: config.seed,
+      factions: [...config.factions],
+      lostFleet,
+      startingVp,
+      ...(config.turnOrder !== undefined ? { turnOrder: [...config.turnOrder] } : {}),
+    },
     rngState: rng.getState(),
     round: 0, // setup 期间尚未进入第 1 轮
     phase: 'setup',
@@ -139,6 +146,8 @@ export function newGame(config: GameConfig): GameState {
     pending: null,
     gaiaProjectsInProgress: [],
     gaiaPhaseQueue: [],
+    incomeQueue: [],
+    turnHold: null,
     winner: null,
     lastEvents: ['game-created'],
   };
@@ -175,6 +184,17 @@ function validateConfig(config: GameConfig): void {
       if (!Number.isInteger(vp) || vp < 0) {
         throw new IllegalActionError('invalid-config', `startingVp 须为非负整数: ${vp}`);
       }
+    }
+  }
+  if (config.turnOrder !== undefined) {
+    const sorted = [...config.turnOrder].sort((a, b) => a - b);
+    const ok =
+      config.turnOrder.length === config.playerCount && sorted.every((v, i) => v === i);
+    if (!ok) {
+      throw new IllegalActionError(
+        'invalid-config',
+        `turnOrder 须为 0..${config.playerCount - 1} 的排列: ${JSON.stringify(config.turnOrder)}`,
+      );
     }
   }
 }

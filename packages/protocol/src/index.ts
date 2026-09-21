@@ -30,8 +30,9 @@ export interface GameRecord {
  * 裁决顺序：
  * 1. pending 非空 → 待决玩家（charge 取邀约队列队首，其余 kind 取 .player）；
  *    ——setup 阶段放置起始矿同样可能产生充能邀约，故 pending 优先于 setup 判定；
- * 2. phase==='setup' → setupQueue[0]；
- * 3. 否则 → currentPlayerIdx（盖亚的 currentPlayerIdx 即座位号）。
+ * 2. turnHold 非空 → 持闸玩家（行动后未确认；currentPlayerIdx 已推进但对方按钮不亮）；
+ * 3. phase==='setup' → setupQueue[0]；
+ * 4. 否则 → currentPlayerIdx（盖亚的 currentPlayerIdx 即座位号）。
  */
 export function actorOf(state: GameState): PlayerIndex | null {
   if (state.phase === 'game-over') return null;
@@ -41,6 +42,9 @@ export function actorOf(state: GameState): PlayerIndex | null {
       return pending.queue[0]?.player ?? null;
     }
     return pending.player;
+  }
+  if (state.turnHold !== null) {
+    return state.turnHold;
   }
   if (state.phase === 'setup') {
     return state.setupQueue[0] ?? null;
@@ -124,11 +128,13 @@ export interface DraftPickInfo {
 
 /**
  * draft 阶段广播状态（广播安全：无 token；选族全程公开）。
- * - turnOrder：行动顺序（= 座位序）；
+ * - turnOrder：行动顺序（开局按种子洗牌的顺位 = 对局行动顺序，规则书先手任意方式定）；
  * - currentActor：当前应行动座位（finished 后为 null）；
  * - picks：座位 → 持有信息（null = 未持有；auction 中被挤走的玩家回到 null）；
  * - available：当前无人持有的种族（draft_pick 可选）；
- * - finished：全员持有 → 可 draft_confirm 开局。
+ * - finished：全员持有 → 可 draft_confirm 开局；
+ * - preview：开局预览局面（板块/地图与真实开局一致——规则书 setup 先摆图再选族，
+ *   选族期间即可见地图/回合计分/终局计分）。
  */
 export interface DraftState {
   mode: Exclude<FactionMode, 'random'>;
@@ -137,6 +143,7 @@ export interface DraftState {
   picks: Record<PlayerIndex, DraftPickInfo | null>;
   available: FactionId[];
   finished: boolean;
+  preview?: FilteredState;
 }
 
 // ---------------------------------------------------------------------------

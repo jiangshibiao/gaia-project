@@ -463,7 +463,12 @@ export type PendingDecision =
    */
   | { kind: 'gain-tech-tile'; player: PlayerIndex; fromShips: boolean; thenCharge: ChargeOffer[] }
   /** 免费建矿（fedlf3/fedlf4/techlf1/ship-rescore-fed 重结算）。thenCharge 同上。 */
-  | { kind: 'free-mine'; player: PlayerIndex; opts: FreeMineOptions; thenCharge: ChargeOffer[] };
+  | { kind: 'free-mine'; player: PlayerIndex; opts: FreeMineOptions; thenCharge: ChargeOffer[] }
+  /**
+   * 收入充能顺序决策：本轮收入同时含 power token 与充能、且加完 token 也无法
+   * 全部推至 III 区（转满）时，结算顺序影响分布，交由玩家选择先后。
+   */
+  | { kind: 'income-order'; player: PlayerIndex; tokens: number; charge: number };
 
 // ---------------------------------------------------------------------------
 // 游戏状态
@@ -491,6 +496,12 @@ export interface GameConfig {
    * 仍在此基础之上叠加（与标准开局一致）。
    */
   startingVp?: number[];
+  /**
+   * 初始行动顺序（setup 放置顺序与第 1 轮先手；缺省 = 座位序）。
+   * 规则书 "Determine a first player using the method of your choice"——服务器开局
+   * 时按种子洗牌传入；须为 0..playerCount-1 的排列。
+   */
+  turnOrder?: PlayerIndex[];
   /**
    * 完整指定 setup 抽取结果（差分对拍/回放用）；提供时 newGame 跳过 rng 抽签，
    * 地图/板块/助推器/L5 标记全部按 preset 摆放（rngState 仍按 seed 初始化）。
@@ -543,7 +554,7 @@ export interface SetupPreset {
 }
 
 export interface GameState {
-  config: Required<Omit<GameConfig, 'preset'>> & Pick<GameConfig, 'preset'>;
+  config: Required<Omit<GameConfig, 'preset' | 'turnOrder'>> & Pick<GameConfig, 'preset' | 'turnOrder'>;
   rngState: number;
   round: number; // 1..6
   phase: GamePhase;
@@ -563,6 +574,14 @@ export interface GameState {
   gaiaProjectsInProgress: { player: PlayerIndex; hex: HexKey }[];
   /** 盖亚阶段待处理 PI 决策的玩家队列（terrans/itars PI；按桌序逐个置为 pending）。 */
   gaiaPhaseQueue: PlayerIndex[];
+  /** 收入充能顺序待决队列（turnOrder 序；逐个置为 pending income-order）。 */
+  incomeQueue: { player: PlayerIndex; tokens: number; charge: number }[];
+  /**
+   * 回合完成闸（行动后未确认）：非 pass 主行动及其 pending 全部响应完毕后置为
+   * 行动者座位——该玩家仍可免费兑换/烧脑，确认（confirm-turn）或撤销前，
+   * 下一玩家不得行动（按钮不亮；"需要等他彻底完成才亮"）。pass 直接推进不设闸。
+   */
+  turnHold: PlayerIndex | null;
   winner: PlayerIndex[] | null;
   lastEvents: string[];
 }
@@ -744,6 +763,10 @@ export type ResponseAction =
       ship?: ShipId;
     }
   /** 免费建矿（响应 pending free-mine）；hex=null = 无合法目标跳过。 */
-  | { type: 'free-mine'; hex: HexKey | null };
+  | { type: 'free-mine'; hex: HexKey | null }
+  /** 收入充能顺序（响应 pending income-order）：先拿 token 再充能 / 先充能再拿 token。 */
+  | { type: 'income-order'; order: 'tokens-first' | 'charge-first' }
+  /** 回合完成确认（turnHold 期间由持闸玩家提交；提交后下一玩家才可行动）。 */
+  | { type: 'confirm-turn' };
 
 export type Action = MainAction | FreeAction | SetupAction | ResponseAction;

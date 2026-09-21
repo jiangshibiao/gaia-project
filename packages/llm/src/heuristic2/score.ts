@@ -901,6 +901,11 @@ function scoreGeneric(ctx: EvalCtx, action: Action): number {
       const R = ctx.cfg.resources;
       return scoreBuildMine(ctx, action.hex) + t.ore * R.ore + t.credits * R.credits + t.qic * R.qic;
     }
+    case 'income-order':
+      // tokens-first 通常 III 区更多（新 token 参与充能），微优
+      return action.order === 'tokens-first' ? 0.2 : 0;
+    case 'confirm-turn':
+      return 0;
   }
 }
 

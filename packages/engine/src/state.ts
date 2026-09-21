@@ -84,34 +84,30 @@ export function spendablePower(p: PlayerState): number {
 }
 
 /**
- * 充能：I→II 优先；I 空则 II→III；都空则不能充（返回实际充入量）。
+ * 充能：**I→II 优先**——必须先把 I 区 token 全部推入 II 区，I 区空了才 II→III。
  * brainstone 约定：普通 token 先动，brainstone 最后动。
+ * （用户明确口径："魔力必须是 1 全转完 2 才能 2 转 3"——曾短暂改成 II→III
+ * 优先连跳（III 最大化），玩家实战反馈违反直觉已回退；收入阶段的"先拿豆/
+ * 先转魔力"顺序由玩家自定（income-order pending），与充能口径无关。）
  */
 export function chargePower(p: PlayerState, amount: number): number {
   const pw = p.power;
   let remaining = amount;
   let charged = 0;
-  // I→II（普通 token）
-  const m1 = Math.min(remaining, pw.bowl1);
-  pw.bowl1 -= m1;
-  pw.bowl2 += m1;
-  remaining -= m1;
-  charged += m1;
-  // brainstone 在 I 区：普通 token 用完后才动
-  if (remaining > 0 && pw.brainstone === 'bowl1') {
-    pw.brainstone = 'bowl2';
-    remaining -= 1;
-    charged += 1;
-  }
-  // II→III（含刚从 I 区移入的 token）
-  const m2 = Math.min(remaining, pw.bowl2);
-  pw.bowl2 -= m2;
-  pw.bowl3 += m2;
-  remaining -= m2;
-  charged += m2;
-  // brainstone 在 II 区
-  if (remaining > 0 && pw.brainstone === 'bowl2') {
-    pw.brainstone = 'bowl3';
+  while (remaining > 0) {
+    if (pw.bowl1 > 0) {
+      pw.bowl1 -= 1;
+      pw.bowl2 += 1;
+    } else if (pw.bowl2 > 0) {
+      pw.bowl2 -= 1;
+      pw.bowl3 += 1;
+    } else if (pw.brainstone === 'bowl1') {
+      pw.brainstone = 'bowl2';
+    } else if (pw.brainstone === 'bowl2') {
+      pw.brainstone = 'bowl3';
+    } else {
+      break;
+    }
     remaining -= 1;
     charged += 1;
   }

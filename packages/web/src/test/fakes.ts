@@ -81,7 +81,7 @@ export class FakeStorage {
 
 export function setupStore(
   reconnectDelayMs = 0,
-  opts: { storage?: FakeStorage; tabId?: string; download?: (filename: string, text: string) => void } = {},
+  opts: { storage?: FakeStorage; download?: (filename: string, text: string) => void } = {},
 ): { store: GameStore; storage: FakeStorage } {
   FakeWebSocket.instances = [];
   const storage = opts.storage ?? new FakeStorage();
@@ -89,7 +89,6 @@ export function setupStore(
   const store = new GameStore(client, {
     reconnectDelayMs,
     storage,
-    tabId: opts.tabId ?? 'tab-A',
     ...(opts.download !== undefined ? { download: opts.download } : {}),
   });
   return { store, storage };

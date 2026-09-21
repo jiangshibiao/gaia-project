@@ -14,8 +14,8 @@
  *
  * 校验全部先于状态变更（失败抛 DraftError，不留半变更状态）。
  */
-import { FACTIONS } from '@gaia/engine';
-import type { FactionId, PlayerIndex } from '@gaia/engine';
+import { createRng, FACTIONS, newGame } from '@gaia/engine';
+import type { FactionId, GameState, PlayerIndex } from '@gaia/engine';
 import type { DraftState, FactionMode } from '@gaia/protocol';
 
 export type DraftMode = Exclude<FactionMode, 'random'>;
@@ -83,18 +83,35 @@ export function draftFactionPool(lostFleet: boolean): FactionId[] {
   return lostFleet ? ALL_FACTION_IDS : ALL_FACTION_IDS.filter((f) => !LF_FACTION_IDS.has(f));
 }
 
-/** 创建 draft 初始状态：全员未持有，座位 0 先行动。 */
-export function createDraft(mode: DraftMode, playerCount: number, lostFleet: boolean): DraftState {
+/** 创建 draft 初始状态：全员未持有，按种子洗牌的顺位先行动（规则书先手由任意方式定）。 */
+export function createDraft(mode: DraftMode, playerCount: number, lostFleet: boolean, seed: number): DraftState {
   const picks: Record<PlayerIndex, { faction: FactionId; bid: number } | null> = {};
   for (let i = 0; i < playerCount; i++) picks[i] = null;
+  const turnOrder = drawTurnOrder(seed, playerCount);
   return {
     mode,
-    turnOrder: Array.from({ length: playerCount }, (_, i) => i as PlayerIndex),
-    currentActor: 0,
+    turnOrder,
+    currentActor: turnOrder[0]!,
     picks,
     available: draftFactionPool(lostFleet),
     finished: false,
   };
+}
+
+/** 按种子洗牌行动顺序（派生种子与抽族流去相关；同 seed 结果确定）。 */
+export function drawTurnOrder(seed: number, playerCount: number): PlayerIndex[] {
+  const rng = createRng((seed ^ 0x85ebca6b) >>> 0);
+  return rng.shuffle(Array.from({ length: playerCount }, (_, i) => i as PlayerIndex));
+}
+
+/**
+ * draft 阶段的开局预览局面：板块/地图生成只依赖 playerCount+seed+lostFleet
+ * （引擎 newGame 的 rng 消耗顺序为 板块 → 地图 → 种族相关抽取，前两项与种族无关），
+ * 故占位种族重建的局面与 confirm 后真实开局逐格一致。仅内存展示用，不进库。
+ */
+export function buildDraftPreview(seed: number, playerCount: number, lostFleet: boolean): GameState {
+  const factions = draftFactionPool(lostFleet).slice(0, playerCount);
+  return newGame({ playerCount, seed, factions, lostFleet });
 }
 
 /** 持有某族的玩家座位（无人持有时 null）。 */

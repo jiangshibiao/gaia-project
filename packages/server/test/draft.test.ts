@@ -12,14 +12,16 @@ import {
   createDraft,
   draftFactionPool,
   draftResult,
+  drawTurnOrder,
 } from '../src/draft.js';
 import type { DraftMode } from '../src/draft.js';
 import type { DraftState } from '@gaia/protocol';
 
 const POOL = draftFactionPool(true);
 
+/** 测试种子 0 洗牌结果 = 座位序（锚定 reference 的座位编号语义）。 */
 function makeDraft(mode: DraftMode, playerCount = 2): DraftState {
-  return createDraft(mode, playerCount, true);
+  return createDraft(mode, playerCount, true, 0);
 }
 
 function pick(state: DraftState, seat: number, faction: FactionId): void {
@@ -36,6 +38,19 @@ describe('draftFactionPool', () => {
     const base = draftFactionPool(false);
     expect(base).toHaveLength(14);
     expect(base).not.toContain('tinkeroids');
+  });
+});
+
+describe('drawTurnOrder（先手洗牌）', () => {
+  it('同种子同序、种子 0 = 座位序（测试锚定值）、覆盖全部座位', () => {
+    for (const n of [2, 3, 4] as const) {
+      expect(drawTurnOrder(0, n)).toEqual(Array.from({ length: n }, (_, i) => i));
+      expect(drawTurnOrder(42, n)).toEqual(drawTurnOrder(42, n));
+      expect([...drawTurnOrder(42, n)].sort((a, b) => a - b)).toEqual(Array.from({ length: n }, (_, i) => i));
+    }
+    // 洗牌真的在洗：若干种子中既有座位序也有非座位序
+    const orders = new Set(Array.from({ length: 20 }, (_, s) => JSON.stringify(drawTurnOrder(s, 4))));
+    expect(orders.size).toBeGreaterThan(3);
   });
 });
 

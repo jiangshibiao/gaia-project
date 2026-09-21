@@ -20,7 +20,7 @@ import { GameScreen } from './game/GameScreen';
 import { PlayerMat } from './game/PlayerMat';
 import { ResearchBoard } from './game/ResearchBoard';
 import { ScoreboardBoard } from './game/ScoreboardBoard';
-import type { GameStore, GameStoreState } from './game/store';
+import type { GameStore, GameStoreState, LogEntry } from './game/store';
 import './style.css';
 
 const state = filterStateFor(
@@ -166,16 +166,20 @@ class PreviewStore {
     this.state = this.buildState(1);
   }
 
-  /** 所有座位自动应用第一个合法行动，直到 done 或无法继续。 */
+  /** 所有座位自动应用第一个合法行动，直到 done 或无法继续（同步记行动日志）。 */
   private autoPlay(done: () => boolean): void {
     for (let guard = 0; guard < 600 && !done(); guard++) {
       const actor = actorOf(this.game);
       if (actor === null) break;
       const legal = enumerateActions(this.game, actor);
       if (legal.length === 0) break;
-      this.game = applyAction(this.game, legal[0]!);
+      const action = legal[0]!;
+      this.game = applyAction(this.game, action);
+      this.log.push({ seq: this.log.length, player: actor, action, events: [] });
     }
   }
+
+  private log: LogEntry[] = [];
 
   private buildState(seq: number): GameStoreState {
     const NAMES = ['我', '乙', '丙', '丁'] as const;
@@ -200,11 +204,10 @@ class PreviewStore {
       snapshot: filterStateFor(this.game),
       legalActions: enumerateActions(this.game, 0),
       seq,
-      log: [],
+      log: this.log,
       thinkingSeats: [],
       gameOver: null,
       lastError: null,
-      takenOver: false,
       agentPlugins: [],
       defaultAISpec: null,
       review: null,
@@ -221,14 +224,11 @@ class PreviewStore {
   };
 
   submitAction = (action: Action): void => {
-    const log = [
-      ...this.state.log,
-      { seq: this.state.seq, player: 0, action, events: [] },
-    ];
+    this.log = [...this.log, { seq: this.log.length, player: 0, action, events: [] }];
     this.game = applyAction(this.game, action);
     // 其他座位自动行动（首个合法行动），直到回到 seat 0 / 对局结束
     this.autoPlay(() => actorOf(this.game) === 0 || actorOf(this.game) === null);
-    this.state = { ...this.buildState(this.state.seq + 1), log };
+    this.state = this.buildState(this.state.seq + 1);
     for (const cb of this.listeners) cb();
   };
 

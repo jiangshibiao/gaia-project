@@ -197,6 +197,12 @@ export function ActionBar({
   const chargeAction = findResponse(legalActions, 'charge');
   const declineAction = findResponse(legalActions, 'decline-charge');
   const terransDone = findResponse(legalActions, 'terrans-gaia-done');
+  const incomeTokensFirst = legalActions.find(
+    (a): a is Extract<Action, { type: 'income-order' }> => a.type === 'income-order' && a.order === 'tokens-first',
+  );
+  const incomeChargeFirst = legalActions.find(
+    (a): a is Extract<Action, { type: 'income-order' }> => a.type === 'income-order' && a.order === 'charge-first',
+  );
 
   const pendingText = (() => {
     if (pending === null) return null;
@@ -215,18 +221,33 @@ export function ActionBar({
         return pending.player === seat ? '选择 1 块科技板' : '等待对手选择科技板…';
       case 'free-mine':
         return pending.player === seat ? '免费建矿：在棋盘点选目标格（或跳过）' : '等待对手免费建矿…';
+      case 'income-order': {
+        if (pending.player !== seat) return '等待对手结算收入…';
+        const pw = state.players[pending.player]?.power;
+        const bowls = pw !== undefined ? `（当前 I ${pw.bowl1} · II ${pw.bowl2} · III ${pw.bowl3}）` : '';
+        return `收入结算顺序${bowls}：+${pending.tokens} 魔力豆 与 充能 ${pending.charge} 谁先？`;
+      }
       default:
         return null;
     }
   })();
 
-  // 无任何提示时不占位（浮动条整体隐藏）
-  if (pendingText === null && (myTurn || actor === null)) {
+  // 无任何提示且非待确认时不占位（浮动条整体隐藏）
+  const confirmTurn = findResponse(legalActions, 'confirm-turn');
+  if (pendingText === null && confirmTurn === undefined && (myTurn || actor === null)) {
     return <div className="action-bar idle" data-testid="action-bar" hidden />;
   }
 
   return (
     <div className="action-bar" data-testid="action-bar">
+      {confirmTurn !== undefined ? (
+        <div className="pending-banner" data-testid="turnhold-banner">
+          <span>回合待完成（仍可免费兑换/烧脑；撤销条[完成]同效）</span>
+          <button type="button" className="btn-primary" data-testid="confirm-turn" onClick={() => onSubmit(confirmTurn)}>
+            完成回合
+          </button>
+        </div>
+      ) : null}
       {pendingText !== null ? (
         <div className="pending-banner" data-testid="pending-banner">
           <span>{pendingText}</span>
@@ -244,6 +265,30 @@ export function ActionBar({
             <button type="button" className="btn-primary" data-testid="terrans-done" onClick={() => onSubmit(terransDone)}>
               结束兑换
             </button>
+          ) : null}
+          {pending?.kind === 'income-order' && pending.player === seat ? (
+            <>
+              {incomeTokensFirst !== undefined ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  data-testid="income-tokens-first"
+                  onClick={() => onSubmit(incomeTokensFirst)}
+                >
+                  先拿豆 +{pending.tokens}
+                </button>
+              ) : null}
+              {incomeChargeFirst !== undefined ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  data-testid="income-charge-first"
+                  onClick={() => onSubmit(incomeChargeFirst)}
+                >
+                  先充能 {pending.charge}
+                </button>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}

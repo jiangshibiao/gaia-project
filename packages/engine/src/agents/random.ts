@@ -30,11 +30,14 @@ export class RandomAgent implements PlayerAgent {
 /** 步数保险上限（正常对局远低于此；超出视为 bug 抛错而非死循环）。 */
 export const MAX_STEPS = 100000;
 
-/** 当前应行动的玩家（pending 响应者 > setup 队首 > 当前回合玩家）。 */
+/** 当前应行动的玩家（pending 响应者 > turnHold 持闸者 > setup 队首 > 当前回合玩家）。 */
 function actingPlayer(state: GameState): PlayerIndex {
   const pending = state.pending;
   if (pending !== null) {
     return pending.kind === 'charge' ? pending.queue[0]!.player : pending.player;
+  }
+  if (state.turnHold !== null) {
+    return state.turnHold;
   }
   if (state.phase === 'setup') {
     return state.setupQueue[0]!;

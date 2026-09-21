@@ -86,6 +86,11 @@ export function enumerateGainTechTile(state: GameState, idx: PlayerIndex): Actio
     }
     if (choice.research !== null) {
       a.research = choice.research.track;
+      // 升 L5 的翻面负载（标准板路径 flipToken 挂在 research 选择里；曾丢失导致
+      // 枚举出无 flipToken 的 L5 推进、apply 抛 no-flippable-token——replay 4p seed23 暴露）。
+      if (choice.research.flipToken !== undefined) {
+        a.flipToken = choice.research.flipToken;
+      }
       if (choice.research.lostPlanetHex !== undefined) {
         a.lostPlanetHex = choice.research.lostPlanetHex;
       }

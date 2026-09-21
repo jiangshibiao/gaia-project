@@ -24,6 +24,7 @@ import { enumerateFormFederation } from './actions/federation.js';
 import { enumerateBoardActions, enumerateSpecialActions } from './actions/board-actions.js';
 import { enumerateExploreShip, enumerateInspectArtifact, enumerateShipActions } from './actions/ships.js';
 import { enumerateChooseTinkering, enumerateFreeMine, enumerateGainTechTile } from './actions/pending.js';
+import { enumerateIncomeOrder } from './actions/income.js';
 import { enumerateTechTileChoices } from './actions/tech.js';
 import { FREE_CONVERSIONS } from './data/prices.js';
 
@@ -92,6 +93,8 @@ export function enumerateActions(state: GameState, player: PlayerIndex): Action[
         return pending.player === player ? enumerateGainTechTile(state, player) : [];
       case 'free-mine':
         return pending.player === player ? enumerateFreeMine(state, player) : [];
+      case 'income-order':
+        return enumerateIncomeOrder(state, player);
     }
   }
 
@@ -106,6 +109,11 @@ export function enumerateActions(state: GameState, player: PlayerIndex): Action[
 
   if (state.phase === 'game-over') {
     return [];
+  }
+
+  // 回合完成闸：持闸玩家仅可免费行动/烧脑/确认完成（confirm-turn）；其他玩家无行动。
+  if (state.turnHold !== null) {
+    return player === state.turnHold ? [...enumerateFreeActions(state, player), { type: 'confirm-turn' }] : [];
   }
 
   // 行动阶段：只有当前玩家有行动（免费 + 主行动）。

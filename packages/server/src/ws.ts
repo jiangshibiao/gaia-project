@@ -15,7 +15,8 @@
  * 即 terminate。应用层 'ping' 消息另回 'pong' JSON（协议消息，与控制帧无关）。
  *
  * 断线：座位 connected=false 并广播 room_state；resume 成功 connected=true 再广播。
- * 同座位多连接：resume 先踢掉该座位旧连接（解绑 + terminate），其 close 不再触发断线广播。
+ * 同座位多连接：允许多地共存（不踢旧连接，各地同步收快照/可各自提交）；
+ * 仅当某座位最后一条连接断开才标 connected=false。
  *
  * AI 驱动（driveAI）：options.aiAgentFactory 为注入缝——测试注入 fixture agent，
  * main.ts 用 agentFactoryFromSpec(GAIA_AI_SPEC ?? DEFAULT_SPEC)。driveAI 在
@@ -190,10 +191,12 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
     }
   }
 
-  /** 广播 draft 阶段状态（DraftState 本身广播安全：无 token、全程公开）。 */
+  /** 广播 draft 阶段状态（DraftState 本身广播安全：无 token、全程公开；preview 附开局预览局面）。 */
   function broadcastDraftState(room: Room): void {
     if (room.draft === null) return;
-    broadcast(room, { type: 'draft_state', protocolVersion: PROTOCOL_VERSION, draft: room.draft });
+    const draft =
+      room.preview !== null ? { ...room.draft, preview: filterStateFor(room.preview) } : room.draft;
+    broadcast(room, { type: 'draft_state', protocolVersion: PROTOCOL_VERSION, draft });
   }
 
   /** 每人视角快照（legalActions 仅当前应行动座位非空）。 */
@@ -215,21 +218,6 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
   function attach(conn: Conn, room: Room, seat: PlayerIndex): void {
     conn.roomCode = room.code;
     conn.seat = seat;
-  }
-
-  /**
-   * resume 抢座：解除同座位已有旧连接的绑定并 terminate。先清空 roomCode/seat 再
-   * terminate——旧连接的 close 事件随后触发 handleDisconnect 时已无座位绑定，不会再
-   * 把座位误标 connected=false 并广播（同座位多连接只保留最新连接）。
-   */
-  function kickSeatConns(room: Room, seat: PlayerIndex, except: Conn): void {
-    for (const other of conns) {
-      if (other === except) continue;
-      if (other.roomCode !== room.code || other.seat !== seat) continue;
-      other.roomCode = null;
-      other.seat = null;
-      other.ws.terminate();
-    }
   }
 
   function assertDetached(conn: Conn): void {
@@ -320,6 +308,7 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
       factions: room.factions,
       lostFleet: room.config.lostFleet ?? true,
       ...(room.startingVp !== null ? { startingVp: room.startingVp } : {}),
+      ...(room.turnOrder !== null ? { turnOrder: room.turnOrder } : {}),
     };
   }
 
@@ -465,7 +454,9 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
       seed: game.seed,
       factions: game.config.game.factions,
       startingVp: game.config.game.startingVp ?? null,
+      turnOrder: game.config.game.turnOrder ?? null,
       draft: null, // 已开局对局无 draft 阶段（draft 仅存在于开局前内存态）
+      preview: null,
       customSeed: game.config.room.seed !== undefined,
     };
     rooms.adopt(room);
@@ -692,7 +683,6 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
       }
       const seat = entry.tokenSeats.get(msg.token);
       if (seat === undefined) throw new WsError('invalid-token', 'token 与对局座位不一致');
-      kickSeatConns(entry.room, seat, conn);
       attach(conn, entry.room, seat);
       setSeatConnected(entry.room, seat, true);
       send(conn, { type: 'credentials', protocolVersion: PROTOCOL_VERSION, seat, token: msg.token });
@@ -713,7 +703,6 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
     // 开局前：RoomManager 内存索引
     const found = rooms.findByToken(msg.token);
     if (found === null) throw new WsError('invalid-token', 'token 无效');
-    kickSeatConns(found.room, found.seat.seat, conn);
     attach(conn, found.room, found.seat.seat);
     found.seat.connected = true;
     send(conn, {
@@ -962,6 +951,10 @@ export async function createGameServer(options: GameServerOptions): Promise<Game
     if (conn.roomCode === null || conn.seat === null) return;
     const room = rooms.getRoom(conn.roomCode);
     if (room === null) return;
+    // 同座位允许多连接共存：还有其他连接绑定该座位时座位保持在线
+    for (const other of conns) {
+      if (other.roomCode === conn.roomCode && other.seat === conn.seat) return;
+    }
     const seatObj = room.seats[conn.seat];
     if (seatObj === null || seatObj === undefined || !seatObj.connected) return;
     seatObj.connected = false;

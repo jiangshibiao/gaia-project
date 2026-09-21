@@ -651,6 +651,12 @@ select {
   width: 34px;
 }
 
+/* 圣器与科技片同高、宽度按原图比例（344×265；曾固定 34px 宽被压窄——用户要求等比） */
+.tech-booster-strip .strip-tech .tile-img.artifact {
+  height: calc(var(--rb-tile-w) * 0.7528);
+  width: auto;
+}
+
 /* 高级片叠放：默认与科技片同宽完全盖住被覆盖片；悬浮整叠时高级片向右大幅滑开露出被覆盖片 */
 .tech-booster-strip .tech-stack {
   position: relative;
@@ -1277,14 +1283,23 @@ select {
   cursor: pointer;
   animation: pi-hotzone-pulse 1.6s ease-in-out infinite;
 }
-@keyframes pi-hotzone-pulse {
-  0%,
+@keyframes pi-hotzone-pulse {  0%,
   100% {
     box-shadow: 0 0 4px #ffd70055;
   }
   50% {
     box-shadow: 0 0 14px #ffd700cc;
   }
+}
+
+/* 3 步改造星球标注色块（tinkeroids/moweyds 轮盘下三小格） */
+.mat-three-step.overlay {
+  position: absolute;
+  width: 2.1%;
+  aspect-ratio: 1;
+  border-radius: 18%;
+  border: 1px solid #00000088;
+  box-shadow: 0 0 3px #00000066 inset;
 }
 
 .thinking-badge {
@@ -1610,10 +1625,11 @@ select {
   pointer-events: none;
 }
 
-/* 次级候选（联邦卫星选择态里非最少方案的格）：弱显示不淹没视野，仍可点 */
+/* 次级候选（联邦卫星选择态里非最少方案的格）：弱显示不抢主高亮，但须可辨识
+   （0x66 描边曾淡到用户完全没注意，误以为只有最少方案的格可点） */
 .hex-highlight.dim {
-  fill: #58a6ff14;
-  stroke: #8fd8ff66;
+  fill: #58a6ff26;
+  stroke: #8fd8ffaa;
   stroke-width: 1.5;
   filter: none;
   animation: none;
@@ -2254,13 +2270,12 @@ select {
   margin: 0 auto 2px;
 }
 
-/* 选族悬浮面板预览（右侧固定大图，不挡操作） */
+/* 选族悬浮面板预览（右侧固定大图，不挡操作；LF 局族板左 + 飞船板块右） */
 .draft-hover-pop {
   position: fixed;
   right: 24px;
   top: 50%;
   transform: translateY(-50%);
-  width: min(560px, 44vw);
   z-index: 60;
   pointer-events: none;
   background: #0d1424ee;
@@ -2270,8 +2285,17 @@ select {
   box-shadow: 0 8px 24px #000000cc;
 }
 
-.draft-hover-pop img {
-  width: 100%;
+.draft-hover-imgs {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* 族板与飞船板块同高（高 = 原族板宽 min(560px,38vw) ÷ 常见族板宽高比 1.566） */
+.draft-hover-pop .draft-hover-board,
+.draft-hover-pop .draft-hover-panel {
+  height: min(357px, 24.3vw);
+  width: auto;
   display: block;
   border-radius: 6px;
 }
@@ -2282,6 +2306,131 @@ select {
   padding: 4px 0 2px;
   color: var(--ink, #d7e3f8);
   font-weight: 600;
+}
+
+/* 选族界面 setup 信息区（顺位/计分片/地图预览） */
+.draft-info {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.draft-info-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.draft-info-label {
+  font-size: 12px;
+  color: var(--ink-dim, #8fa3c8);
+  margin-right: 2px;
+}
+
+.draft-order-chip {
+  border: 1px solid;
+  border-radius: 10px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 20px;
+  background: #0d142488;
+}
+
+.draft-scoring-img {
+  width: 36px;
+  border-radius: 4px;
+  border: 1px solid var(--border, #2a3a5f);
+}
+
+.draft-info-map {
+  height: 46vh;
+  border: 1px solid var(--border, #2a3a5f);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+}
+
+/* 最近行动行（版图正上方一行小字 + 右侧「全部 ›」入口） */
+.mat-last-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 1px 6px;
+  font-size: min(1.3vh, 10.5px);
+  color: var(--ink-dim, #9db4d8);
+  background: #0d142480;
+  border-top: 1px solid #2a3a5f55;
+}
+
+.mat-last-action .last-action-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mat-last-action .last-action-all {
+  flex: none;
+  font-size: inherit;
+  padding: 0 4px;
+  color: var(--accent, #58a6ff);
+}
+
+/* 全部行动浮层（portal 到 body 的独立下拉框：锚定最近行动行下方，盖版图不动布局） */
+.action-log-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 88;
+  background: transparent;
+}
+
+.action-log-pop {
+  position: fixed;
+  z-index: 89;
+  background: #0d1424f5;
+  border: 1px solid var(--border, #2a3a5f);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #000000cc;
+  display: flex;
+  flex-direction: column;
+  /* 字体与最近动作行一致（曾 12px 偏大） */
+  font-size: min(1.3vh, 10.5px);
+}
+
+.action-log-pop header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border, #2a3a5f);
+}
+
+.action-log-pop .action-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 5px 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.action-log-pop .log-seq {
+  color: var(--ink-dim, #9db4d8);
+  display: inline-block;
+  min-width: 40px;
+}
+
+/* 可点击的特殊行动片（tech9/高级板/助推片八边形）：弱高亮 + 指针 */
+.tile-special-available {
+  cursor: pointer;
+}
+
+.tile-special-available:hover .tile-img {
+  filter: brightness(1.15) drop-shadow(0 0 6px #58a6ff88);
 }
 
 /* 探索板特殊行动格（八边形热区 + 已用盖片置灰；可点时弱提示边框，同 ship-action-cell 模式） */

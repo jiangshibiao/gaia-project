@@ -26,7 +26,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { FACTIONS, FINAL_RANK_VP, FINAL_SCORING, finalCount, mapNeighbors } from '@gaia/engine';
-import type { Action, BoardActionId, BuildingType, FederationTokenId, FinalTileId, GameState, HexKey, PlayerIndex, ShipActionId, ShipId } from '@gaia/engine';
+import type { Action, BoardActionId, BuildingType, FederationTokenId, FinalTileId, GameState, HexKey, PlayerIndex, ShipActionId, ShipId, SpecialActionId } from '@gaia/engine';
 import { actorOf } from '@gaia/protocol';
 import type { FilteredState } from '@gaia/protocol';
 import { flashForAction, chargeTriggerHex } from './actionFlash';
@@ -54,7 +54,7 @@ const CONNECTION_LABEL: Record<string, string> = {
 };
 import { applyDragDrop, planDrag, snapHex } from './drag';
 import type { DragBuilding, DragPlan } from './drag';
-import { currentQuestion, hexTargets, isReady, pick, readyAction, startSelection } from './interactions';
+import { canExploreShip, currentQuestion, hexTargets, isReady, pick, readyAction, startSelection } from './interactions';
 import type { CategoryId, Selection } from './interactions';
 import { useGameStore } from './store';
 import type { GameStore } from './store';
@@ -291,8 +291,8 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
   // - 检查点（我行动前快照）以来日志里须有我的回合内行动。**排除项**：
   //   · 被动充能响应（charge/decline——别人回合的应答，"充能不可撤销"）；
   //   · 轮初自动流程的决策响应（terrans-gaia-done / itars-gaia-tech /
-  //     choose-tinkering / terrans-gaia-* 盖亚兑换——收入/盖亚阶段的应答，
-  //     不是我的主回合行动）；
+  //     choose-tinkering / income-order / terrans-gaia-* 盖亚兑换——收入/盖亚
+  //     阶段的应答，不是我的主回合行动）；
   //   **seq 口径**：服务器 action_applied.seq = 行动落库序号（= 行动前快照 seq），
   //   snapshot.seq = 行动后计数；检查点快照 seq=S 时我的首个行动日志 seq=S，
   //   故过滤边界为 >=（> 会把该行动漏掉——曾致撤销条整轮不显示）；
@@ -310,29 +310,31 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     a.type === 'terrans-gaia-done' ||
     a.type === 'itars-gaia-tech' ||
     a.type === 'choose-tinkering' ||
+    a.type === 'income-order' ||
     (a.type === 'free-conversion' && a.conversion.startsWith('terrans-gaia-'));
-  const turnLog =
-    turnCheckpoint !== null
-      ? s.log.filter(
-          (e) =>
-            e.seq >= turnCheckpoint.seq &&
-            e.action.type !== 'charge' &&
-            e.action.type !== 'decline-charge' &&
-            !isRoundStartResponse(e.action),
-        )
-      : [];
-  const lastMyActionSeq = turnLog.reduce<number | null>(
-    (acc, e) => (e.player === seat ? Math.max(acc ?? 0, e.seq) : acc),
+  const isPassiveResp = (a: Action): boolean => a.type === 'charge' || a.type === 'decline-charge';
+  // 我最后一个回合内行动（撤销条触发点；服务器 undo 资格镜像 session.ts undo：
+  // 主行动/免费/setup 行动——被动充能响应、pass、轮初响应不算）。
+  // **不再依赖内存检查点**——刷新/重连丢检查点后撤销条依然可用（曾致 ly 建造后无撤销按钮）。
+  const lastMyActionSeq = s.log.reduce<number | null>(
+    (acc, e) =>
+      e.player === seat && !isPassiveResp(e.action) && e.action.type !== 'pass' && e.action.type !== 'confirm-turn' && !isRoundStartResponse(e.action)
+        ? e.seq
+        : acc,
     null,
   );
-  const blockedByHuman = turnLog.some((e) => e.player !== seat && !aiSeats.has(e.player));
+  // 资格（与 server session.undo 尾段校验一致）：其后有其他真人座位的非响应行动则不可撤
+  // （AI 行动/被动充能响应可一并回退；pass 在服务器规则里也算行动，同样阻挡）。
+  const blockedByHuman =
+    lastMyActionSeq !== null &&
+    s.log.some(
+      (e) => e.seq > lastMyActionSeq && e.player !== seat && !aiSeats.has(e.player) && !isPassiveResp(e.action),
+    );
   const undoBarVisible =
-    turnCheckpoint !== null &&
-    meNow !== undefined &&
-    meThen !== undefined &&
-    state.round === turnCheckpoint.state.round && // 新一轮开始后不再显示上轮撤销条
     lastMyActionSeq !== null &&
     !blockedByHuman &&
+    // 有检查点时仍要求未进新一轮；无检查点（刷新后）由服务器裁决即可
+    (turnCheckpoint === null || state.round === turnCheckpoint.state.round) &&
     (undoDismissedAt === null || lastMyActionSeq > undoDismissedAt);
   const undoDelta: [string, number][] =
     undoBarVisible && meNow !== undefined && meThen !== undefined ? describeDelta(meThen, meNow) : [];
@@ -390,9 +392,51 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
       });
       return;
     }
+    // 直点推断（轮到自己且未在选择态）：按点击位置推断操作——
+    // 点自己建筑 → 升级建筑（预填 hex，后续字段照问）；
+    // 点可建矿空地（含已盖亚星球）→ 建矿（直提行动，点中即结算）。
+    if (selection === null && actor === seat) {
+      const building = state.map[hex]?.building;
+      if (building?.player === seat && s.legalActions.some((a) => a.type === 'upgrade' && a.hex === hex)) {
+        const sel0 = startSelection(s.legalActions, 'upgrade');
+        if (sel0 !== null) {
+          setSelection(pick(sel0, 'hex', hex));
+          return;
+        }
+      }
+      if (building === undefined && s.legalActions.some((a) => a.type === 'build-mine' && a.hex === hex)) {
+        let sel = startSelection(s.legalActions, 'mine');
+        if (sel !== null) {
+          sel = pick(sel, 'hex', hex);
+          if (!tryDirectSubmit(sel)) setSelection(sel);
+          return;
+        }
+      }
+      return;
+    }
     if (selection === null || question === null || question.field.kind !== 'hex') return;
     if (!question.options.some((o) => o.value === hex)) return;
     applyPick(question.field.key, hex);
+  };
+
+  /**
+   * 点击特殊行动八边形（tech9/高级板/助推片/探索板/PI 等）：
+   * 等效按「特殊行动」并锁定该行动格——即时效果（无字段）直接提交；
+   * 带目标（booster4/5 等）进选择流预填 action、剩余字段照问。
+   */
+  const onSpecialTile = (specialId: SpecialActionId): void => {
+    if (actor !== seat || selection !== null || fedStage !== null) return;
+    const candidates = s.legalActions.filter((a): a is Extract<Action, { type: 'special-action' }> => a.type === 'special-action' && a.action === specialId);
+    if (candidates.length === 0) return;
+    const hasPayload = candidates.some((a) => a.payload !== undefined && Object.keys(a.payload).length > 0);
+    if (!hasPayload && candidates.length === 1) {
+      onSubmit(candidates[0]!);
+      return;
+    }
+    const sel = startSelection(s.legalActions, 'special');
+    if (sel !== null) {
+      setSelection(pick(sel, 'action', specialId));
+    }
   };
 
   const onStartSelection = (category: CategoryId): void => {
@@ -416,9 +460,9 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     setSelection(sel);
   };
 
-  /** 舰队面板：预填 explore-ship 的 ship（通常直接进确认条）。 */
+  /** 舰队面板：预填 explore 的 ship（普通或射程加成候选均可；通常直接进确认条）。 */
   const onExploreShip = (ship: ShipId): void => {
-    if (!s.legalActions.some((a) => a.type === 'explore-ship' && a.ship === ship)) return;
+    if (!canExploreShip(s.legalActions, ship)) return;
     let sel = startSelection(s.legalActions, 'explore');
     if (sel === null) return;
     sel = pick(sel, 'ship', ship);
@@ -531,14 +575,16 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
           onBuildingDragStart={actor === seat ? onBuildingDragStart : undefined}
           specialAvailable={actor === seat && s.legalActions.some((a) => a.type === 'special-action')}
           onSpecialAction={() => onStartSelection('special')}
+          onSpecialTile={onSpecialTile}
           flash={flash}
+          actionLog={s.log}
         />
 
         {/* 中央：星图 + 底部横条（舰队 2×2 + 助推器池） */}
         <section className="center-panel">
           <div className="map-area">
             {/* 撤销条：我本回合行动提交后浮出（增量 + [撤销]/[完成]；
-                真人对手行动后或充能响应后不显示） */}
+                真人对手行动后或充能响应后不显示；[完成]= 提交 confirm-turn 放行对方） */}
             {undoBarVisible ? (
               <div className="undo-bar" data-testid="undo-bar">
                 <span className="undo-delta" data-testid="undo-delta">
@@ -547,7 +593,17 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
                 <button type="button" className="btn-primary undo-btn" data-testid="undo-turn" onClick={() => store.undo()}>
                   撤销
                 </button>
-                <button type="button" className="btn-ghost undo-dismiss" data-testid="undo-dismiss" onClick={() => setUndoDismissedAt(lastMyActionSeq ?? s.seq)}>
+                <button
+                  type="button"
+                  className="btn-ghost undo-dismiss"
+                  data-testid="undo-dismiss"
+                  onClick={() => {
+                    // 完成 = 提交 confirm-turn 放行（turnHold 期间对方按钮不亮）；同时本地收起
+                    const confirm = s.legalActions.find((a) => a.type === 'confirm-turn');
+                    if (confirm !== undefined) store.submitAction(confirm);
+                    setUndoDismissedAt(lastMyActionSeq ?? s.seq);
+                  }}
+                >
                   完成
                 </button>
               </div>
@@ -559,6 +615,7 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
               dimHighlights={dimHighlights}
               flashHexes={flash?.hexes}
               onHexClick={onHexClick}
+              directClickAll={actor === seat && selection === null && fedStage === null && drag === null}
               selectedHexes={fedStage?.stage === 'satellites' ? new Set(fedStage.selected) : undefined}
               snapPreview={
                 drag !== null && dragSnap !== null
@@ -678,10 +735,9 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
             </div>
 
             {/* 事件日志：地图左下角可折叠浮层 */}
+            {/* 事件日志：地图左下角可折叠浮层。按钮固定底部不动，日志内容在按钮
+                **上方**展开（曾按钮在顶、展开后被顶上去，关闭要追着按钮移动鼠标） */}
             <section className={`log-panel${logOpen ? ' open' : ''}`}>
-              <button type="button" className="log-toggle" data-testid="log-toggle" onClick={() => setLogOpen((v) => !v)}>
-                事件日志（{s.log.length}）{logOpen ? '▲' : '▼'}
-              </button>
               {logOpen ? (
                 <ul className="log-list" data-testid="log-list">
                   {[...s.log].reverse().map((e) => (
@@ -695,6 +751,9 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
                   ))}
                 </ul>
               ) : null}
+              <button type="button" className="log-toggle" data-testid="log-toggle" onClick={() => setLogOpen((v) => !v)}>
+                事件日志（{s.log.length}）{logOpen ? '▲' : '▼'}
+              </button>
             </section>
           </div>
 

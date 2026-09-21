@@ -283,18 +283,15 @@ describe('<App> 路由', () => {
     expect(store.getState().gameOver).toBeNull();
   });
 
-  it('连接被另一标签页接管：显示提示；重新接管后发 resume', async () => {
+  it('同座位多连接共存：被动断开后自动重连并 resume（无接管画面）', async () => {
     const storage = new FakeStorage();
-    const { store } = storeSetup(0, { storage, tabId: 'tab-A' });
+    const { store } = storeSetup(0, { storage });
     const ws = renderInRoom(store);
-    storage.setItem('gaia:owner:ABCD23', JSON.stringify({ tabId: 'tab-B', at: Date.now() }));
+    // 另一标签页同 token 连上（服务端不再踢人）：本连接被断也直接自动重连
     act(() => ws.serverClose());
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(screen.getByTestId('taken-over')).toHaveTextContent('连接被另一标签页接管');
-    expect(FakeWebSocket.instances).toHaveLength(1); // 未自动重连互踢
-    fireEvent.click(screen.getByTestId('reclaim'));
     const ws2 = lastWs();
     expect(ws2).not.toBe(ws);
     act(() => ws2.open());
@@ -303,6 +300,8 @@ describe('<App> 路由', () => {
       protocolVersion: PROTOCOL_VERSION,
       token: 'tok-me',
     });
+    // 仍在房间内（无接管提示画面）
+    expect(screen.queryByTestId('create-form')).not.toBeInTheDocument();
   });
 
   it('刷新恢复：storage 有 token 时渲染即自动 connect + resume', () => {

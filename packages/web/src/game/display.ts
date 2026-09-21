@@ -355,8 +355,12 @@ export function describeAction(action: Action): string {
       return `充能行动：${boardActionLabel(action.action)}`;
     case 'qic-action':
       return `QIC 行动：${boardActionLabel(action.action)}`;
-    case 'special-action':
-      return `特殊行动：${specialActionLabel(action.action)}`;
+    case 'special-action': {
+      // 射程加成用于探索飞船（gleens-range/booster5/ship-range3 的 ship 目标）：点名目的船
+      const targetShip = action.payload?.ship;
+      const s = `特殊行动：${specialActionLabel(action.action)}`;
+      return targetShip !== undefined ? `${s} → 探索「${shipName(targetShip)}」` : s;
+    }
     case 'ship-action':
       return `飞船行动（${shipName(action.ship)}）：${shipActionLabel(action.action)}`;
     case 'explore-ship':
@@ -393,6 +397,10 @@ export function describeAction(action: Action): string {
           : '放弃拿科技板';
     case 'free-mine':
       return action.hex !== null ? `免费建矿 @${action.hex}` : '跳过免费建矿';
+    case 'income-order':
+      return action.order === 'tokens-first' ? '收入结算：先拿魔力豆再充能' : '收入结算：先充能再拿魔力豆';
+    case 'confirm-turn':
+      return '完成回合';
     default:
       return (action as { type: string }).type;
   }

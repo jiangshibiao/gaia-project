@@ -31,6 +31,7 @@ import {
   techTileImage,
 } from '../assets';
 import { artifactName, factionName, federationTokenName, playerColor, shipActionLabel, shipName, techTileName } from './display';
+import { canExploreShip } from './interactions';
 import { SHIP_CALIBRATION } from './ship-calibration';
 import type { RelPoint, ShipCalibration } from './ship-calibration';
 
@@ -113,7 +114,7 @@ function ShipOverlays({
       ))}
 
       {/* 科技板槽（Twilight 无槽）：船上标准板为人数块（剩余 = 人数 − 已 claim 人数），
-          错落堆叠同研究板（顶片满位，下层向左下露边表张数） */}
+          整叠居中于槽位（每层向右上步进，底层左下露边表张数，同研究板） */}
       {SHIP_TECH_SLOT_SHIPS.includes(ship.id) && cal.techSlot !== null ? (
         (() => {
           const tile = ship.techTiles[0];
@@ -133,8 +134,8 @@ function ShipOverlays({
                     style={{
                       width: '100%',
                       position: 'absolute',
-                      left: `${-(remaining - 1 - i) * 5}%`,
-                      top: `${(remaining - 1 - i) * 5}%`,
+                      left: `${(i - (remaining - 1) / 2) * 5}%`,
+                      top: `${((remaining - 1) / 2 - i) * 5}%`,
                     }}
                     src={techTileImage(tile)}
                     alt={techTileName(tile)}
@@ -263,13 +264,12 @@ function ShipZoom({
   );
 }
 
-export function FleetPanel({ state, seat, legalActions, onShipAction, onExplore }: FleetPanelProps): ReactElement {
+export function FleetPanel({ state, seat, legalActions, onShipAction, onExplore, fedTokenOptions, onFedTokenPick }: FleetPanelProps): ReactElement {
   const ships = state.board.ships;
   /** legal 判定：存在对应该 (ship, action) 的 ship-action 候选。 */
   const canShipAction = (ship: ShipId, action: ShipActionId): boolean =>
     legalActions.some((a) => a.type === 'ship-action' && a.ship === ship && a.action === action);
-  const canExplore = (ship: ShipId): boolean =>
-    legalActions.some((a) => a.type === 'explore-ship' && a.ship === ship);
+  const canExplore = (ship: ShipId): boolean => canExploreShip(legalActions, ship);
 
   /** 悬浮非交互区 ≥2 秒 → 弹出船板大图（≈2 倍卡片宽，含全部叠加层）；离开/移入叠加层即取消。 */
   const [zoom, setZoom] = useState<{ ship: ShipId; w: number } | null>(null);
@@ -337,6 +337,8 @@ export function FleetPanel({ state, seat, legalActions, onShipAction, onExplore 
                   interactive
                   canShipAction={canShipAction}
                   onShipAction={onShipAction}
+                  fedTokenOptions={fedTokenOptions}
+                  onFedTokenPick={onFedTokenPick}
                 />
               </div>
             </section>

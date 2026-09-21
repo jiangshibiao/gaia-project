@@ -256,8 +256,10 @@ export function ResearchBoard({
           />
         ) : null}
 
-        {/* 标准科技板（轨道位 + 底排自由位）：按剩余张数堆叠——**顶片与高级片同形式
-            （满宽居中于槽位）**，下层向左下露出边缘表张数；拿完露出印刷空槽 */}
+        {/* 标准科技板（轨道位 + 底排自由位）：按剩余张数堆叠——**整叠居中于槽位**
+            （每层向右上步进，底层在左下露边表张数；顶片不再独占槽中心——
+            曾"顶片居中+下层左下"致主片视觉偏右上，用户反馈后改整叠居中）；
+            拿完露出印刷空槽 */}
         {TECH_POSITION_ORDER.map((pos) => {
           const tile = board.techTilePositions[pos];
           const left = board.techTiles[tile] ?? 0;
@@ -281,8 +283,8 @@ export function ResearchBoard({
                   className="tile-img stack-tile"
                   style={{
                     width: '100%',
-                    left: `${-(n - 1 - i) * TECH_STACK_OFFSET_PCT}%`,
-                    top: `${(n - 1 - i) * TECH_STACK_OFFSET_PCT * TECH_TILE_ASPECT}%`,
+                    left: `${(i - (n - 1) / 2) * TECH_STACK_OFFSET_PCT}%`,
+                    top: `${((n - 1) / 2 - i) * TECH_STACK_OFFSET_PCT * TECH_TILE_ASPECT}%`,
                   }}
                   src={techTileImage(tile)}
                   alt={techTileName(tile)}

@@ -310,14 +310,14 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(screen.queryByTestId('undo-bar')).toBeNull();
   });
 
-  it('撤销条：新一轮开始（round 前进）后自动隐藏——上轮 pass 后收入阶段不再挂条', () => {
+  it('撤销条：新一轮开始（round 前进）后自动隐藏——上轮行动后收入阶段不再挂条', () => {
     const { store } = setupStore();
     const ws = renderInGame(store);
     const game = gameFixture();
     const s2 = filterStateFor(game);
     s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
     act(() => {
-      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'pass', booster: 'booster1' }, events: [] });
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'place-initial-mine', hex: '0,0' }, events: [] });
       ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
     });
     expect(screen.getByTestId('undo-bar')).toBeInTheDocument();

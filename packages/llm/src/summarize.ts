@@ -468,6 +468,10 @@ export function describeAction(state: GameState, seat: PlayerIndex, action: Acti
         : '放弃拿板';
     case 'free-mine':
       return action.hex !== null ? `免费建矿在${action.hex}` : '跳过免费建矿';
+    case 'income-order':
+      return action.order === 'tokens-first' ? '收入结算：先拿 power token 再充能' : '收入结算：先充能再拿 power token';
+    case 'confirm-turn':
+      return '完成回合（确认推进）';
   }
 }
 

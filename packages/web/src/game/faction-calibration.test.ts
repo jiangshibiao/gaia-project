@@ -1,11 +1,11 @@
 /**
  * faction-calibration 结构契约：
- * - 18 个 FactionId 均有校准条目，且全部有高清图（moweyds 于 2026-09 补齐）；
+ * - 18 个 FactionId 均有校准条目，且全部有高清图；
  * - hi 文件名映射正确（BalTaks/Firak/HadschHallas 拼写；LF 照片板为 .png）；
  * - 全部叠加坐标在 0..1；槽位数：矿 8 / TS 4 / 实验室 3 / gaiaformer 3；
  * - 槽位 x 左→右递增（取用顺序）；bescods PI/学院左右互换；
  * - darkanians/space-giants 用 LF 开箱正面照单独标定（2870×1851）；
- * - moweyds 用 wellplayed 官方渲染图（990×641，布局与模板逐点吻合）。
+ * - moweyds 用 BGG 9503664 开箱照下半块（Octopoides，2950×1879），同版型共用 LF 标定。
  */
 import { describe, expect, it } from 'vitest';
 import type { FactionId } from '@gaia/engine';
@@ -40,7 +40,7 @@ describe('faction-calibration 结构', () => {
     expect(factionBoardImage('space-giants')).toBe('/assets/factions/hi/space-giants_board_bgg9503663.png');
     expect(factionBoardImage('tinkeroids')).toBe('/assets/factions/hi/tinkeroids_board_feuerland.jpg');
     expect(factionBoardImage('darkanians')).toBe('/assets/factions/hi/darkanians_board_bgg9503663.png');
-    expect(factionBoardImage('moweyds')).toBe('/assets/factions/hi/moweyds_board_wellplayed.jpg');
+    expect(factionBoardImage('moweyds')).toBe('/assets/factions/hi/moweyds_board_bgg9503664.png');
   });
 
   it('全部叠加坐标在 0..1，槽位数正确', () => {

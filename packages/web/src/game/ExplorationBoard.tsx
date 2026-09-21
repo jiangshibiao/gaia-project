@@ -9,7 +9,7 @@
  */
 import type { ReactElement } from 'react';
 import { FACTIONS } from '@gaia/engine';
-import type { FactionId, PlayerIndex } from '@gaia/engine';
+import type { FactionId, PlayerIndex, SpecialActionId } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
 import { ACTION_TOKEN_IMAGE, boosterImage, factionPanelImage, shuttleImage } from '../assets';
 import { boosterName, factionName, shipName } from './display';
@@ -51,6 +51,8 @@ export interface ExplorationBoardProps {
   specialAvailable?: boolean | undefined;
   /** 点击特殊行动格 → 与「特殊行动」按钮同效。 */
   onSpecialAction?: (() => void) | undefined;
+  /** 点击具体特殊行动八边形（tech9/助推片 booster4-5/高级板）→ 锁定该行动发起。 */
+  onSpecialTile?: ((id: SpecialActionId) => void) | undefined;
 }
 
 /**
@@ -58,15 +60,24 @@ export interface ExplorationBoardProps {
  * = 版图高一半）。非 LF 局面板不渲染、助推片仍在（标准局同样有助推片）。
  * flashBooster：Pass 换得新助推片后 ~5s 红框提示。
  */
-export function PanelBoosterStack({ state, seat, flashBooster = false, specialAvailable, onSpecialAction }: ExplorationBoardProps & { flashBooster?: boolean | undefined }): ReactElement {
+/** 带特殊行动格的助推片（booster4 免费步建矿 / booster5 +3 射程 / boosterlf4 立即盖亚计划）。 */
+const SPECIAL_BOOSTERS: ReadonlySet<string> = new Set(['booster4', 'booster5', 'boosterlf4']);
+
+export function PanelBoosterStack({ state, seat, flashBooster = false, specialAvailable, onSpecialAction, onSpecialTile }: ExplorationBoardProps & { flashBooster?: boolean | undefined }): ReactElement {
   const p = state.players[seat];
-  // 助推片特殊行动（booster4 免费步建矿 / booster5 +3 射程）本轮已用 → 片上盖 action token
-  const boosterUsed = p !== undefined && (p.booster === 'booster4' || p.booster === 'booster5') && p.specialUsed.includes(p.booster);
+  // 助推片特殊行动（booster4/5/boosterlf4）本轮已用 → 片上盖 action token
+  const boosterUsed = p !== undefined && p.booster !== null && SPECIAL_BOOSTERS.has(p.booster) && p.specialUsed.includes(p.booster as SpecialActionId);
+  // 点击助推片八边形 → 等效按特殊行动并锁定该格（未用时）
+  const boosterSpecial = !boosterUsed && onSpecialTile !== undefined && p?.booster != null && SPECIAL_BOOSTERS.has(p.booster) ? (p.booster as SpecialActionId) : null;
   return (
     <div className="panel-booster-stack" data-testid={`panel-booster-stack-${seat}`}>
-      <ExplorationBoard state={state} seat={seat} specialAvailable={specialAvailable} onSpecialAction={onSpecialAction} />
+      <ExplorationBoard state={state} seat={seat} specialAvailable={specialAvailable} onSpecialAction={onSpecialAction} onSpecialTile={onSpecialTile} />
       {p?.booster != null ? (
-        <span className="tile-wrap side-booster-wrap">
+        <span
+          className={`tile-wrap side-booster-wrap${boosterSpecial !== null ? ' tile-special-available' : ''}`}
+          onClick={boosterSpecial !== null ? () => onSpecialTile?.(boosterSpecial) : undefined}
+          title={boosterSpecial !== null ? `${boosterName(p.booster)}特殊行动（点击发起）` : undefined}
+        >
           <img
             className={`tile-img booster side-booster${flashBooster ? ' flash' : ''}${boosterUsed ? ' used' : ''}`}
             data-testid={`side-booster-${seat}`}
@@ -89,7 +100,7 @@ export function PanelBoosterStack({ state, seat, flashBooster = false, specialAv
   );
 }
 
-export function ExplorationBoard({ state, seat, specialAvailable, onSpecialAction }: ExplorationBoardProps): ReactElement | null {
+export function ExplorationBoard({ state, seat, specialAvailable, onSpecialAction, onSpecialTile }: ExplorationBoardProps): ReactElement | null {
   if (state.config.lostFleet !== true) return null;
   const p = state.players[seat];
   if (p === undefined) return null;
@@ -99,10 +110,12 @@ export function ExplorationBoard({ state, seat, specialAvailable, onSpecialActio
   const deployed = p.shuttles.length;
   const factionColor = FACTIONS[p.faction].color;
   // 探索板特殊行动格（部分族有，印在面板中部八边形）：本轮已用 → 盖片置灰；
-  // 自己回合且有合法特殊行动 → 热区可点（与 PI 热区/「特殊行动」按钮同效）
+  // 自己回合且有合法特殊行动 → 热区可点，**直发该行动**（onSpecialTile 锁定，
+  // 不再经过「特殊行动」菜单重选——用户反馈点 +2 还要再选一次）
   const specialId = PANEL_SPECIAL_ACTION[p.faction];
   const specialUsed = specialId !== undefined && (p.specialUsed.includes(specialId) || p.roundAbilityUsed.includes(specialId));
-  const specialCan = specialId !== undefined && !specialUsed && specialAvailable === true && onSpecialAction !== undefined;
+  const specialHandler = onSpecialTile !== undefined ? () => onSpecialTile(specialId!) : onSpecialAction;
+  const specialCan = specialId !== undefined && !specialUsed && specialAvailable === true && specialHandler !== undefined;
   return (
     <section
       className="exploration-board"
@@ -122,8 +135,8 @@ export function ExplorationBoard({ state, seat, specialAvailable, onSpecialActio
           }}
           data-testid={`eb-special-${seat}`}
           disabled={!specialCan}
-          title={specialUsed ? '特殊行动（本轮已用）' : specialCan ? '探索板特殊行动（同特殊行动按钮）' : '探索板特殊行动'}
-          onClick={specialCan ? () => onSpecialAction?.() : undefined}
+          title={specialUsed ? '特殊行动（本轮已用）' : specialCan ? '探索板特殊行动（点击直接发起）' : '探索板特殊行动'}
+          onClick={specialCan ? () => specialHandler?.() : undefined}
         >
           {specialUsed ? <img className="action-token" src={ACTION_TOKEN_IMAGE} alt="已用" /> : null}
         </button>

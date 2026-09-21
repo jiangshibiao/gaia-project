@@ -20,7 +20,9 @@ import { applyFormFederation } from './actions/federation.js';
 import { applyBoardAction, applySpecialAction } from './actions/board-actions.js';
 import { applyExploreShip, applyInspectArtifact, applyShipAction } from './actions/ships.js';
 import { applyChooseTinkering, applyFreeMine, applyGainTechTile } from './actions/pending.js';
-import { advanceTurn, settleRoundStart } from './turn.js';
+import { applyIncomeOrder } from './actions/income.js';
+import { chargePower, gainPowerTokens } from './state.js';
+import { activateNextIncomePending, advanceTurn, settleRoundStart } from './turn.js';
 
 export interface ApplyOptions {
   /** 高频路径（自对弈/MCTS）跳过合法性校验。 */
@@ -73,6 +75,43 @@ export function settleSetupSkips(state: GameState): GameState {
   return s;
 }
 
+/**
+ * 收入顺序待决的自动冲刷（tokens-first 贪心结清）：重放旧对局（行动日志无
+ * income-order 记录，当时收入是自动结算的）或任何失同步场景下，非 income-order
+ * 行动到来前先把遗留的收入决策自动结清。冲刷可能连带跑盖亚阶段（队列空时），
+ * 产生的 terrans/itars/tinkering pending 照常留给后续行动响应。
+ */
+export function settleIncomeSkips(state: GameState, actionType: string): GameState {
+  if (actionType === 'income-order' || state.pending?.kind !== 'income-order') {
+    return state;
+  }
+  const out = structuredClone(state);
+  while (out.pending?.kind === 'income-order') {
+    const pd = out.pending;
+    const p = out.players[pd.player]!;
+    gainPowerTokens(p, pd.tokens);
+    chargePower(p, pd.charge);
+    activateNextIncomePending(out);
+  }
+  return out;
+}
+
+/**
+ * turnHold 自动放行（旧日志重放/失同步兼容）：非持闸玩家的行动到来时视同已确认
+ * 自动放闸；持闸玩家自己的免费行动/烧脑/confirm-turn 照常处理（不清闸）。
+ */
+export function settleTurnHoldSkips(state: GameState, action: Action): GameState {
+  const holder = state.turnHold;
+  if (holder === null) return state;
+  const byHolder =
+    action.type === 'confirm-turn' ||
+    ((action.type === 'free-conversion' || action.type === 'burn') && (action.actor ?? holder) === holder);
+  if (byHolder) return state;
+  const out = structuredClone(state);
+  out.turnHold = null;
+  return out;
+}
+
 /** 行动的行为人（用于合法性校验时选择枚举视角）。 */
 function actorOf(state: GameState, action: Action): PlayerIndex {
   switch (action.type) {
@@ -87,6 +126,13 @@ function actorOf(state: GameState, action: Action): PlayerIndex {
       return state.pending?.kind === 'tinkering' ? state.pending.player : -1;
     case 'gain-tech-tile':
       return state.pending?.kind === 'gain-tech-tile' ? state.pending.player : -1;
+    case 'income-order':
+      return state.pending?.kind === 'income-order' ? state.pending.player : -1;
+    case 'confirm-turn':
+      return state.turnHold ?? -1;
+    case 'burn':
+      // 显式 actor 优先（重放注入库中 player 列）；turnHold 期间缺省持闸玩家。
+      return action.actor ?? state.turnHold ?? state.currentPlayerIdx;
     case 'free-mine':
       return state.pending?.kind === 'free-mine' ? state.pending.player : -1;
     case 'free-conversion':
@@ -94,7 +140,8 @@ function actorOf(state: GameState, action: Action): PlayerIndex {
       if (action.conversion.startsWith('terrans-gaia') && state.pending?.kind === 'terrans-gaia') {
         return state.pending.player;
       }
-      return state.currentPlayerIdx;
+      // 显式 actor 优先（重放注入库中 player 列）；turnHold 期间缺省持闸玩家。
+      return action.actor ?? state.turnHold ?? state.currentPlayerIdx;
     case 'place-initial-mine':
     case 'choose-booster':
       return state.setupQueue[0] ?? -1;
@@ -119,7 +166,7 @@ function dispatch(state: GameState, action: Action, opts?: ApplyOptions): void {
       });
       return;
     case 'burn':
-      applyBurn(state, action.actor ?? state.currentPlayerIdx);
+      applyBurn(state, action.actor ?? state.turnHold ?? state.currentPlayerIdx);
       return;
     case 'charge':
       applyChargeResponse(state, true, action.amount);
@@ -167,6 +214,9 @@ function dispatch(state: GameState, action: Action, opts?: ApplyOptions): void {
     case 'gain-tech-tile':
       applyGainTechTile(state, action);
       return;
+    case 'income-order':
+      applyIncomeOrder(state, action.order);
+      return;
     case 'free-mine':
       applyFreeMine(state, action.hex);
       return;
@@ -175,6 +225,12 @@ function dispatch(state: GameState, action: Action, opts?: ApplyOptions): void {
       return;
     case 'terrans-gaia-done':
       applyTerransGaiaDone(state);
+      return;
+    case 'confirm-turn':
+      if (state.turnHold === null) {
+        throw new IllegalActionError('no-turn-hold', '当前无待确认的回合（turnHold 为空）');
+      }
+      state.turnHold = null;
       return;
     default:
       throw new IllegalActionError('not-implemented', `行动暂未实现: ${String((action as { type: unknown }).type)}`);
@@ -187,7 +243,7 @@ function dispatch(state: GameState, action: Action, opts?: ApplyOptions): void {
  * IllegalActionError('illegal-action')；opts.assumeLegal 跳过校验。
  */
 export function applyAction(state: GameState, action: Action, opts?: ApplyOptions): GameState {
-  const settled = settleSetupSkips(state);
+  const settled = settleTurnHoldSkips(settleIncomeSkips(settleSetupSkips(state), action.type), action);
   if (opts?.assumeLegal !== true) {
     const actor = actorOf(settled, action);
     const key = stableStringify(action);
@@ -212,6 +268,11 @@ export function applyAction(state: GameState, action: Action, opts?: ApplyOption
     out.pending === null &&
     (MAIN_ACTION_TYPES.has(action.type) || RESPONSE_ACTION_TYPES.has(action.type))
   ) {
+    // 回合完成闸：非 pass 主行动（及其 pending 全部响应完毕）后置闸给行动者——
+    // 确认（confirm-turn）或撤销前，下一玩家不得行动（按钮不亮）。pass 直接推进不设闸。
+    if (action.type !== 'pass' && out.turnHold === null) {
+      out.turnHold = out.currentPlayerIdx;
+    }
     advanceTurn(out);
   }
   return out;

@@ -20,10 +20,10 @@
  */
 import { randomBytes } from 'node:crypto';
 import { createRng } from '@gaia/engine';
-import type { FactionId, PlayerIndex } from '@gaia/engine';
+import type { FactionId, GameState, PlayerIndex } from '@gaia/engine';
 import type { AIDifficulty, AISeatConfig, DraftState, RoomConfig, RoomState } from '@gaia/protocol';
 import { resolveAgentPlugin } from '@gaia/llm';
-import { DraftError, applyDraftBid, applyDraftPick, createDraft, draftFactionPool, draftResult } from './draft.js';
+import { DraftError, applyDraftBid, applyDraftPick, buildDraftPreview, createDraft, draftFactionPool, draftResult, drawTurnOrder } from './draft.js';
 
 export type RoomErrorCode =
   | 'room-full'
@@ -66,8 +66,12 @@ export interface Room {
   factions: FactionId[] | null;
   /** 每座位起始 VP（auction = 10 − 出价）；非 draft 开局为 null（引擎缺省全 10）。 */
   startingVp: number[] | null;
+  /** 初始行动顺序（按 seed 洗牌，规则书先手任意方式定）；startGame 时落地，开始前为 null。 */
+  turnOrder: PlayerIndex[] | null;
   /** draft（种族选取）阶段状态；friendly/auction 模式 startGame 后非 null，确认开局后归 null。 */
   draft: DraftState | null;
+  /** draft 阶段的开局预览局面（板块/地图与真实开局一致；仅内存展示，不进库）。 */
+  preview: GameState | null;
   /** client 供 seed 时 true——公开标记，大厅可展示"房主指定了种子"（防作弊通道透明化）。 */
   readonly customSeed: boolean;
 }
@@ -156,7 +160,9 @@ export class RoomManager {
       seed: null,
       factions: null,
       startingVp: null,
+      turnOrder: null,
       draft: null,
+      preview: null,
       customSeed: configCopy.seed !== undefined,
     };
     this.rooms.set(code, room);
@@ -234,9 +240,13 @@ export class RoomManager {
     if (factionMode !== 'random') {
       // friendly/auction：先落地 seed 并进入 draft 阶段；factions/startingVp 待
       // draft 全员就绪后由 confirmDraft 按结果落地（见 draft.ts）。
-      room.draft = createDraft(factionMode, room.config.playerCount, room.config.lostFleet ?? true);
+      // draft 顺位即对局行动顺序（同一洗牌）；preview 与真实开局一致。
+      room.draft = createDraft(factionMode, room.config.playerCount, room.config.lostFleet ?? true, room.seed);
+      room.turnOrder = room.draft.turnOrder;
+      room.preview = buildDraftPreview(room.seed, room.config.playerCount, room.config.lostFleet ?? true);
       return room;
     }
+    room.turnOrder = drawTurnOrder(room.seed, room.config.playerCount);
     room.started = true;
     room.factions = drawFactions(room.seed, room.config.playerCount, room.config.lostFleet ?? true);
     return room;
@@ -278,6 +288,7 @@ export class RoomManager {
     room.factions = factions;
     room.startingVp = startingVp;
     room.draft = null;
+    room.preview = null;
     room.started = true;
     return room;
   }
@@ -285,6 +296,7 @@ export class RoomManager {
   /** 中止 draft（真人中途离开房间）：回到大厅态（AI 填充座位保留，可重新 start）。 */
   abortDraft(room: Room): void {
     room.draft = null;
+    room.preview = null;
   }
 
   getRoom(code: string): Room | null {

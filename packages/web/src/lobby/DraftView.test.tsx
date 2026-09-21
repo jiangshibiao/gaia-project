@@ -9,6 +9,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION } from '@gaia/protocol';
 import type { DraftState, FactionMode } from '@gaia/protocol';
+import { newGame } from '@gaia/engine';
+import { filterStateFor } from '@gaia/protocol';
 import type { FactionId } from '@gaia/engine';
 import { RoomView } from './Lobby';
 import type { GameStore } from '../game/store';
@@ -67,13 +69,31 @@ describe('<DraftView>', () => {
     expect(screen.queryByTestId('start-game')).not.toBeInTheDocument();
   });
 
+  it('setup 信息区：顺位（先手标注）/ 回合计分 / 终局条件 / 地图预览', () => {
+    const preview = filterStateFor(
+      newGame({ playerCount: 2, seed: 42, factions: ['terrans', 'lantids'], lostFleet: true }),
+    );
+    renderInDraft(draftFixture({ turnOrder: [1, 0], currentActor: 1, preview }));
+    const info = screen.getByTestId('draft-info');
+    expect(info).toBeInTheDocument();
+    // 顺位：乙先手（座位 1 在首位，带「先手」标注）
+    const order = screen.getByTestId('draft-turn-order');
+    expect(order).toHaveTextContent('1. 乙（先手）');
+    expect(order).toHaveTextContent('2. 甲');
+    // 计分片：6 回合 + 2 终局 = 8 张图
+    expect(screen.getByTestId('draft-scoring').querySelectorAll('img.draft-scoring-img')).toHaveLength(8);
+    // 地图预览容器渲染（BoardSvg）
+    expect(screen.getByTestId('draft-map').querySelector('svg')).not.toBeNull();
+  });
+
   it('friendly：点空闲族发 draft_pick；被锁定族禁用并显示持有者', () => {
     const { ws } = renderInDraft(
       draftFixture({ picks: { 0: { faction: 'terrans', bid: 0 }, 1: null }, currentActor: 0 }),
     );
     // terrans 已被座位 0 持有：显示持有者昵称，且（friendly）不可再点
+    // （aria-disabled 禁用态——不用 disabled 属性以保留悬浮预览）
     expect(screen.getByTestId('draft-holder-terrans')).toHaveTextContent('甲');
-    expect(screen.getByTestId('draft-faction-terrans')).toBeDisabled();
+    expect(screen.getByTestId('draft-faction-terrans')).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(screen.getByTestId('draft-faction-xenos'));
     expect(ws.lastSent()).toEqual({
       type: 'draft_pick',
@@ -86,7 +106,7 @@ describe('<DraftView>', () => {
   it('非本人回合：所有族格禁用，提示等待对方', () => {
     renderInDraft(draftFixture({ currentActor: 1 }));
     expect(screen.getByTestId('draft-turn-hint')).toHaveTextContent('等待 乙 选族');
-    expect(screen.getByTestId('draft-faction-xenos')).toBeDisabled();
+    expect(screen.getByTestId('draft-faction-xenos')).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('auction：点已被持有族弹出加价输入（显示当前价），提交发 draft_bid', () => {

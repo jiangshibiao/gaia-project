@@ -150,9 +150,17 @@ export class GameSession {
     );
     try {
       for (const { seq, player, action } of listActions(db, gameId)) {
+        // turnHold 兼容（旧日志无 confirm-turn 记录）：非持闸玩家行动视同已确认，先自动放闸；
+        // 此时免费行动缺省行为人会误归持闸玩家，须注入库中 player 列
+        const needInject = session.gameState.turnHold !== null && player !== session.gameState.turnHold;
+        const settled = needInject ? { ...session.gameState, turnHold: null } : session.gameState;
         // 数据完整性校验：行动者必须是当时应行动的玩家
-        if (player !== actorOf(session.gameState)) return null;
-        session.gameState = applyAction(session.gameState, action);
+        if (player !== actorOf(settled)) return null;
+        const a =
+          needInject && (action.type === 'free-conversion' || action.type === 'burn') && action.actor === undefined
+            ? { ...action, actor: player }
+            : action;
+        session.gameState = applyAction(settled, a);
         session.actionLog.push({ seq, player, action });
         session.seq += 1;
       }
@@ -259,7 +267,16 @@ export class GameSession {
     let rebuilt = settleSetupSkips(newGame(this.gameState.config));
     const kept: { seq: number; player: PlayerIndex; action: Action }[] = [];
     for (const a of actions.slice(0, lastMyAction)) {
-      rebuilt = applyAction(rebuilt, a.action);
+      // turnHold 兼容：非持闸玩家行动先放闸，免费行动行为人须注入（同 restore 循环）
+      const needInject = rebuilt.turnHold !== null && (a.player as PlayerIndex) !== rebuilt.turnHold;
+      if (needInject) {
+        rebuilt.turnHold = null;
+      }
+      const injected =
+        needInject && (a.action.type === 'free-conversion' || a.action.type === 'burn') && a.action.actor === undefined
+          ? { ...a.action, actor: a.player as PlayerIndex }
+          : a.action;
+      rebuilt = applyAction(rebuilt, injected);
       kept.push({ seq: a.seq, player: a.player as PlayerIndex, action: a.action });
     }
     this.gameState = rebuilt;

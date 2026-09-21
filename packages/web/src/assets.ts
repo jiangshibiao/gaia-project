@@ -165,7 +165,8 @@ const FACTION_BOARD_HI_FILE: Record<FactionId, string | null> = {
   'space-giants': 'space-giants_board_bgg9503663.png',
   tinkeroids: 'tinkeroids_board_feuerland.jpg',
   darkanians: 'darkanians_board_bgg9503663.png',
-  moweyds: 'moweyds_board_wellplayed.jpg',
+  // moweyds：BGG 9503664 西班牙版开箱照下半块（Octopoides；曾误用 wellplayed 图——实为 space-giants 板）
+  moweyds: 'moweyds_board_bgg9503664.png',
 };
 
 /** 族板整图（Etchelon 扫描 / LF 官方渲染·BGG 开箱正面照）；null = 无高清图。 */

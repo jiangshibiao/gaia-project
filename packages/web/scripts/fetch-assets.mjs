@@ -126,14 +126,16 @@ FILES.push([`${FEUERLAND}/GP_Exp_FleetShips_DE_Eclipse.jpg`, `lf/ships/eclipse_b
 FILES.push([`${FEUERLAND}/GP_Exp_FleetShips_Rebellion.jpg`, `lf/ships/rebellion_board_feuerland.jpg`]);
 FILES.push([`${FEUERLAND}/GP_Exp_Player_Tableaus_SpaceGiants.jpg`, `factions/hi/space-giants_board_feuerland.jpg`]);
 FILES.push([`${FEUERLAND}/GP_Exp_Player_Tableaus_DE_Tinkeroids.jpg`, `factions/hi/tinkeroids_board_feuerland.jpg`]);
-// moweyds 族板：wellplayed 官方渲染图（青色大胡子；勿再用 BGG 粉色俯视照——那是别族）
-FILES.push(['https://www.wellplayed.ch/cdn/shop/files/gaia-project-the-lost-fleet-en-capstone-games-board-499.webp?v=1733721780&width=1080', 'factions/hi/moweyds_board_wellplayed.jpg']);
+// moweyds 族板：BGG 9503664 西班牙版开箱照下半块（Octopoides；勿再用 wellplayed 图——那是 space-giants 板）
+// （裁剪条目见下方 CROPS）
 
 /** BGG 合影裁剪：[src, dest, [x, y, w, h]]。 */
 const CROPS = [
   ['https://cf.geekdo-images.com/zJdYpVoS2bXZFVlP3nYNvQ__original/img/6aVe0f8QdCK3OYMJThpjWETJnHE=/pic9503665.jpg', 'lf/ships/twilight_board_bgg9503665.png', [0, 2775, 2865, 936]],
   ['https://cf.geekdo-images.com/zJdYpVoS2bXZFVlP3nYNvQ__original/img/6aVe0f8QdCK3OYMJThpjWETJnHE=/pic9503665.jpg', 'lf/ships/tf-mars_board_bgg9503665.png', [0, 1855, 2865, 929]],
   ['https://cf.geekdo-images.com/zJdYpVoS2bXZFVlP3nYNvQ__original/img/6aVe0f8QdCK3OYMJThpjWETJnHE=/pic9503663.jpg', 'factions/hi/darkanians_board_bgg9503663.png', [0, 0, 2870, 1851]],
+  // moweyds（Octopoides）：9503664 下半块（上半 = tinkeroids，已用 feuerland 渲染图）
+  ['https://cf.geekdo-images.com/YVFnYJKanJ5V6WqXW0H8BQ__original/img/wlUQB9TTqnlVNXS-a3yBnXR_fgU=/0x0/filters:format(jpeg)/pic9503664.jpg', 'factions/hi/moweyds_board_bgg9503664.png', [0, 1879, 2950, 1879]],
   ['https://cf.geekdo-images.com/2gUWH1ga3gHSMlWC1GCPlQ__large/img/TiLLakjsx6nGMPISyiCXXYHK71Q=/fit-in/1024x1024/filters:no_upscale():strip_icc()/pic8065038.jpg', 'lf/misc/tinkering-tiles_official_render.jpg', null],
 ];
 

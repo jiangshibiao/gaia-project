@@ -4,7 +4,7 @@
  * - 收入轨剩余建筑叠加数 = buildings supply（放走即从面板消失）；
  * - power 三区+gaia 区显示 token 点阵与计数（data-count）；
  * - taklons 脑石按所在区叠加；gaiaformer 可用数占槽；
- * - moweyds 也有高清图（wellplayed 渲染，2026-09 补），同走整图布局；
+ * - moweyds 也有高清图（BGG 9503664 开箱照下半块，2026-09 补），同走整图布局；
  * - 卫星/空间站 misc 行已删除（卫星数见终局计分区）；
  * - 联邦标记单行自适应（不 wrap，max-width = (100% − 间隙) ÷ 枚数）。
  */
@@ -88,12 +88,13 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
     expect(g2('mat-gf-0')).toHaveLength(1);
   });
 
-  it('moweyds 也走整图布局（wellplayed 渲染）', () => {
+  it('moweyds 高清图整图布局（BGG 9503664 板，无 legacy 回退）', () => {
     const state = fixture(['moweyds', 'terrans'], true);
     const { getByTestId } = render(<PlayerMat state={state} playerIdx={0} />);
-    const board = getByTestId('mat-board-0');
-    const img = board.querySelector<HTMLImageElement>('img.mat-board-img');
-    expect(img?.src).toContain('/assets/factions/hi/moweyds_board_wellplayed.jpg');
+    // 真板已补（曾误用 wellplayed space-giants 板）：走与其他族一致的整图布局
+    expect(getByTestId('player-mat-0').className).not.toContain('legacy');
+    const img = document.querySelector<HTMLImageElement>('img.mat-board-img');
+    expect(img?.src).toContain('/assets/factions/hi/moweyds_board_bgg9503664.png');
   });
 
   it('bescods 学院叠加在左、PI 在右（override 生效）', () => {

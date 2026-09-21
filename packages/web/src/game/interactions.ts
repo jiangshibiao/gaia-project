@@ -91,6 +91,8 @@ export interface CategoryDef {
   fields: FieldDef[];
   /** list：候选直接全列表展示（联邦枚举），不走字段收窄。 */
   mode?: 'list';
+  /** 自定义候选集（跨行动类型合并/去重；缺省 = legalActions.filter(match)）。 */
+  candidates?: (legal: readonly Action[]) => Action[];
 }
 
 /** 取行动 payload 字段（无 payload 返回 null）。 */
@@ -236,8 +238,9 @@ export const CATEGORIES: readonly CategoryDef[] = [
       field('ship', '飞船', responseGet('ship-action', 'ship'), (v) => shipName(v as ShipId)),
       field('action', '行动格', responseGet('ship-action', 'action'), (v) => shipActionLabel(v as ShipActionId)),
       hexField('hex', '目标格', payloadGet('hex')),
-      field('track', '研究轨', payloadGet('track'), (v) => trackName(v as ResearchTrack)),
+      // 升级实验室先拿科技板、再确认爬轨（曾 track 在 techTile 前，用户反馈顺序别扭）
       field('techTile', '科技板', payloadGet('techTile'), (v) => techTileName(v as TechTileId)),
+      field('track', '研究轨', payloadGet('track'), (v) => trackName(v as ResearchTrack)),
       field('federationToken', '联邦标记', payloadGet('federationToken'), (v) => federationTokenName(v as FederationTokenId)),
     ],
   },
@@ -245,7 +248,8 @@ export const CATEGORIES: readonly CategoryDef[] = [
     id: 'explore',
     label: '探索飞船',
     match: (a) => a.type === 'explore-ship',
-    fields: [field('ship', '飞船', responseGet('explore-ship', 'ship'), (v) => shipName(v as ShipId))],
+    candidates: exploreCandidates,
+    fields: [field('ship', '飞船', (a) => (a.type === 'explore-ship' ? a.ship : payloadGet('ship')(a)), (v) => shipName(v as ShipId))],
   },
   {
     id: 'artifact',
@@ -358,7 +362,7 @@ export function startSelection(
   category: CategoryId,
 ): Selection | null {
   const def = categoryDef(category);
-  const candidates = legalActions.filter(def.match);
+  const candidates = def.candidates !== undefined ? def.candidates(legalActions) : legalActions.filter(def.match);
   if (candidates.length === 0) return null;
   return { category, candidates };
 }
@@ -452,4 +456,25 @@ export function findResponse<T extends Action['type']>(
   type: T,
 ): Extract<Action, { type: T }> | undefined {
   return legalActions.find((a): a is Extract<Action, { type: T }> => a.type === type);
+}
+
+/**
+ * 探索飞船候选：普通 explore-ship + 射程加成特殊行动（gleens-range/booster5/ship-range3）
+ * 的 ship 目标。同船已有普通候选时去掉加成版——同目的地且不耗加成更优，选项保持每船一个。
+ */
+export function exploreCandidates(legal: readonly Action[]): Action[] {
+  const plain = legal.filter((a) => a.type === 'explore-ship');
+  const plainShips = new Set(plain.map((a) => (a as Extract<Action, { type: 'explore-ship' }>).ship));
+  const boosted = legal.filter(
+    (a): a is Extract<Action, { type: 'special-action' }> =>
+      a.type === 'special-action' && a.payload?.ship !== undefined && !plainShips.has(a.payload.ship as ShipId),
+  );
+  return [...plain, ...boosted];
+}
+
+/** 是否存在探索某船的候选（普通或射程加成特殊行动；FleetPanel 探索按钮可用判定）。 */
+export function canExploreShip(legal: readonly Action[], ship: ShipId): boolean {
+  return exploreCandidates(legal).some((a) =>
+    a.type === 'explore-ship' ? a.ship === ship : a.type === 'special-action' && a.payload?.ship === ship,
+  );
 }

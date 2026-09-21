@@ -12,10 +12,11 @@
  * moweyds 无高清图（或整图加载失败）→ 回退旧布局（legacy：头图+文字行）。
  * 当前行动者高亮边框（active）；点击"详情"弹大图模态（detailed 变体）。
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 import { FACTIONS } from '@gaia/engine';
-import type { BuildingSupply, BuildingType, FactionId, PlayerIndex, PlayerState, ResearchTrack } from '@gaia/engine';
+import type { BuildingSupply, BuildingType, FactionId, PlayerIndex, PlayerState, ResearchTrack, SpecialActionId } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
 import {
   ACTION_TOKEN_IMAGE,
@@ -40,12 +41,16 @@ import type { RelPoint } from './research-calibration';
 import {
   advTechTileName,
   artifactName,
+  describeAction,
   factionName,
   federationTokenName,
+  PLANET_COLORS,
+  planetName,
   playerColor,
   techTileName,
   trackName,
 } from './display';
+import type { LogEntry } from './store';
 
 const TRACK_ORDER: readonly ResearchTrack[] = ['terra', 'nav', 'int', 'gaia', 'eco', 'sci'];
 
@@ -113,11 +118,21 @@ export interface PlayerMatProps {
   specialAvailable?: boolean | undefined;
   /** 点击星际要塞（PI 热区）→ 与「特殊行动」按钮同效。 */
   onSpecialAction?: (() => void) | undefined;
+  /** 点击族板能力八边形（bescods 推进最低轨）→ 等效特殊行动按钮并锁定该行动。 */
+  onSpecialTile?: ((id: SpecialActionId) => void) | undefined;
+  /** 全量行动日志（用于"最近行动"行与全部行动弹窗；无则不渲染该行）。 */
+  actionLog?: readonly LogEntry[] | undefined;
 }
 
-export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, detailed, onShowDetail, onCycleViewSeat, flashSlot, onBuildingDragStart, specialAvailable, onSpecialAction }: PlayerMatProps): ReactElement | null {
+/** 不算"他干了什么"的被动响应（最近行动行跳过：被动充能/回合完成是应答而非主动操作）。 */
+const PASSIVE_RESPONSE_TYPES: ReadonlySet<string> = new Set(['charge', 'decline-charge', 'confirm-turn']);
+
+export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, detailed, onShowDetail, onCycleViewSeat, flashSlot, onBuildingDragStart, specialAvailable, onSpecialAction, onSpecialTile, actionLog }: PlayerMatProps): ReactElement | null {
   const p = state.players[playerIdx];
   const [imgBroken, setImgBroken] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const lastActionRowRef = useRef<HTMLDivElement>(null);
+  const matRootRef = useRef<HTMLElement>(null);
   if (p === undefined) return null;
   const def = FACTIONS[p.faction];
   const color = playerColor(state, playerIdx);
@@ -127,12 +142,17 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
   // 详情弹窗用：被高级板覆盖的标准板（仍持有，置灰缩小垫在高级板下）
   const covered = new Set(p.advTechTiles.map((t) => t.covers));
   const uncoveredTech = p.techTiles.filter((t) => !covered.has(t));
+  // 最近行动行（仿伯明翰：玩家打了什么在面板正上方一目了然；被动充能应答不算）+
+  // 右侧「全部 ›」开该玩家历史行动弹窗
+  const myLog = actionLog?.filter((e) => e.player === playerIdx) ?? [];
+  const lastAction = [...myLog].reverse().find((e) => !PASSIVE_RESPONSE_TYPES.has(e.action.type));
 
   return (
     <section
       className={`player-mat${active === true ? ' active' : ''}${passed ? ' passed' : ''}${detailed === true ? ' detailed' : ''}${legacy ? ' legacy' : ''}`}
       data-testid={`player-mat-${playerIdx}`}
       style={{ borderColor: color }}
+      ref={matRootRef}
     >
       <header
         className="mat-head"
@@ -182,10 +202,27 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
         ) : null}
       </header>
 
+      {lastAction !== undefined ? (
+        <div className="mat-last-action" data-testid={`mat-last-action-${playerIdx}`} ref={lastActionRowRef}>
+          <span className="last-action-label" title={describeAction(lastAction.action)}>
+            最近：{describeAction(lastAction.action)}
+          </span>
+          <button
+            type="button"
+            className="btn-ghost last-action-all"
+            data-testid={`mat-log-${playerIdx}`}
+            title="查看该玩家此前的所有行动"
+            onClick={() => setLogOpen(true)}
+          >
+            全部 ›
+          </button>
+        </div>
+      ) : null}
+
       {legacy ? (
         <LegacyBoard p={p} playerIdx={playerIdx} color={def.color} />
       ) : (
-        <FactionBoard p={p} playerIdx={playerIdx} faction={p.faction} color={def.color} onImgError={() => setImgBroken(true)} gleensTokenAvailable={p.faction === 'gleens' && (state.board.federationTokens['gleens'] ?? 0) > 0} flashSlot={flashSlot} onBuildingDragStart={onBuildingDragStart} specialAvailable={specialAvailable} onSpecialAction={onSpecialAction} />
+        <FactionBoard p={p} playerIdx={playerIdx} faction={p.faction} color={def.color} onImgError={() => setImgBroken(true)} gleensTokenAvailable={p.faction === 'gleens' && (state.board.federationTokens['gleens'] ?? 0) > 0} flashSlot={flashSlot} onBuildingDragStart={onBuildingDragStart} specialAvailable={specialAvailable} onSpecialAction={onSpecialAction} onSpecialTile={onSpecialTile} />
       )}
 
       <div className="mat-resources" data-testid={`resources-${playerIdx}`}>
@@ -215,19 +252,54 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
         </span>
       </div>
 
-      {p.artifacts.length > 0 ? (
-        <div className="mat-row mat-lf">
-          {p.artifacts.map((a) => (
-            <img key={a.id} className="tile-img sm artifact" src={artifactImage(a.id)} alt={artifactName(a.id)} title={artifactName(a.id)} />
-          ))}
-        </div>
-      ) : null}
-
       {detailed === true ? (
         <div className="mat-detail-strip">
           <TechBoosterStrip state={state} playerIdx={playerIdx} />
         </div>
       ) : null}
+
+      {/* 全部行动浮层（portal 到 body：锚定在最近行动行下方的独立下拉框，
+          暂时盖住版图但不动任何布局；曾用文档流弹窗把面板顶上去） */}
+      {logOpen && lastActionRowRef.current !== null && matRootRef.current !== null
+        ? (() => {
+            const rowRect = lastActionRowRef.current.getBoundingClientRect();
+            const matRect = matRootRef.current.getBoundingClientRect();
+            return createPortal(
+              <>
+                <div className="action-log-backdrop" data-testid="action-log-backdrop" onClick={() => setLogOpen(false)} />
+                <div
+                  className="action-log-pop"
+                  style={{
+                    top: rowRect.bottom + 4,
+                    left: rowRect.left,
+                    width: Math.max(rowRect.width, 320),
+                    // 高度与版图一致（用户要求滚轮浏览历史而非矮框截断）
+                    height: Math.max(matRect.bottom - rowRect.bottom - 8, 140),
+                  }}
+                  data-testid={`action-log-modal-${playerIdx}`}
+                >
+                  <header>
+                    <strong>
+                      {nickname ?? `玩家 ${playerIdx + 1}`} 的全部行动（{myLog.length}）
+                    </strong>
+                    <button type="button" className="btn-ghost" data-testid="close-action-log" onClick={() => setLogOpen(false)}>
+                      ×
+                    </button>
+                  </header>
+                  <ul className="action-log-list">
+                    {[...myLog].reverse().map((e) => (
+                      <li key={e.seq}>
+                        <span className="log-seq">#{e.seq}</span>
+                        <span className="log-desc">{describeAction(e.action)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>,
+              document.body,
+            );
+          })()
+        : null}
     </section>
   );
 }
@@ -237,12 +309,12 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
  * 左栏版图下方展示，与详情弹窗共享覆盖/叠放逻辑；推进片已迁出版图右侧竖列
  * （PanelBoosterStack：种族飞船面板 + 当回合助推片）。三者皆空时不渲染。
  */
-export function TechBoosterStrip({ state, playerIdx, flashTileIds = [] }: { state: FilteredState; playerIdx: PlayerIndex; flashTileIds?: readonly string[] | undefined }): ReactElement | null {
+export function TechBoosterStrip({ state, playerIdx, flashTileIds = [], onSpecialTile }: { state: FilteredState; playerIdx: PlayerIndex; flashTileIds?: readonly string[] | undefined; onSpecialTile?: ((id: SpecialActionId) => void) | undefined }): ReactElement | null {
   const p = state.players[playerIdx];
   if (p === undefined) return null;
   const covered = new Set(p.advTechTiles.map((t) => t.covers));
   const uncoveredTech = p.techTiles.filter((t) => !covered.has(t));
-  if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.federationTokens.length === 0) return null;
+  if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.federationTokens.length === 0 && p.artifacts.length === 0) return null;
   /** 片上特殊行动本轮已用 → 盖 action token（tech9 充能 / advtech3/11/13 资源格）。 */
   const specialUsedSet = new Set<string>(p.specialUsed);
   /** 按获得时间混排（acquisitions 为空/缺失时回退：科技→高级→联邦的分组序）。 */
@@ -263,14 +335,20 @@ export function TechBoosterStrip({ state, playerIdx, flashTileIds = [] }: { stat
           const flashing = flashTileIds.includes(item.id);
           if (item.kind === 'tech') {
             const used = item.id === 'tech9' && specialUsedSet.has('tech9');
+            const specialId = item.id === 'tech9' ? ('tech9' as const) : null;
+            const canSpecial = specialId !== null && !used && onSpecialTile !== undefined;
             return (
-              <span key={`tech-${item.id}-${i}`} className="tile-wrap">
+              <span
+                key={`tech-${item.id}-${i}`}
+                className={`tile-wrap${canSpecial ? ' tile-special-available' : ''}`}
+                onClick={canSpecial ? () => onSpecialTile(specialId) : undefined}
+                title={canSpecial ? '充能 4 魔力（点击直接发起）' : techTileName(item.id as Parameters<typeof techTileName>[0])}
+              >
                 <img
                   className={`tile-img${flashing ? ' flash' : ''}${used ? ' used' : ''}`}
                   data-testid={flashing ? `strip-flash-${playerIdx}` : undefined}
                   src={techTileImage(item.id as Parameters<typeof techTileImage>[0])}
                   alt={techTileName(item.id as Parameters<typeof techTileName>[0])}
-                  title={techTileName(item.id as Parameters<typeof techTileName>[0])}
                 />
                 {used ? (
                   <img
@@ -288,12 +366,15 @@ export function TechBoosterStrip({ state, playerIdx, flashTileIds = [] }: { stat
             const adv = p.advTechTiles.find((t) => t.id === item.id);
             if (adv === undefined) return null;
             const used = specialUsedSet.has(adv.id);
+            const isSpecialAdv = adv.id === 'advtech3' || adv.id === 'advtech11' || adv.id === 'advtech13';
+            const canSpecial = isSpecialAdv && !used && onSpecialTile !== undefined;
             return (
               <span
                 key={`adv-${item.id}-${i}`}
-                className={`tech-stack${flashing ? ' flash' : ''}`}
+                className={`tech-stack${flashing ? ' flash' : ''}${canSpecial ? ' tile-special-available' : ''}`}
                 data-testid={flashing ? `strip-flash-${playerIdx}` : undefined}
-                title={`${advTechTileName(adv.id)}（覆盖 ${techTileName(adv.covers)}）`}
+                title={canSpecial ? `${advTechTileName(adv.id)}特殊行动（点击直接发起）` : `${advTechTileName(adv.id)}（覆盖 ${techTileName(adv.covers)}）`}
+                onClick={canSpecial ? () => onSpecialTile(adv.id as SpecialActionId) : undefined}
               >
                 <img
                   className="tile-img covered"
@@ -326,12 +407,37 @@ export function TechBoosterStrip({ state, playerIdx, flashTileIds = [] }: { stat
             />
           );
         })}
+        {/* 圣器与科技/联邦片同条置版图下方（曾独立一行在资源条下，用户要求并入横条） */}
+        {p.artifacts.map((a) => (
+          <img
+            key={`art-${a.id}`}
+            className="tile-img artifact"
+            data-testid={`strip-artifact-${playerIdx}-${a.id}`}
+            src={artifactImage(a.id)}
+            alt={artifactName(a.id)}
+            title={artifactName(a.id)}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
 /** 族板整图 + 校准叠加（power/建筑/gaiaformer/脑石）。 */
+/** 族板印刷能力八边形对应的特殊行动（热区位置见 faction-calibration specialSlot；仅列板面印有八边形的族）。 */
+const BOARD_SPECIAL_ACTION: Partial<Record<FactionId, SpecialActionId>> = {
+  bescods: 'bescods-up',
+};
+
+/** PI（行星研究院）特殊行动（热区在 piSlot）：已用盖 action token。 */
+const PI_SPECIAL_ACTION: Partial<Record<FactionId, SpecialActionId>> = {
+  moweyds: 'moweyds-ring',
+  ambas: 'ambas-swap',
+  firaks: 'firaks-down',
+  ivits: 'ivits-sp',
+  tinkeroids: 'tinkeroids-tile',
+};
+
 function FactionBoard({
   p,
   playerIdx,
@@ -343,6 +449,7 @@ function FactionBoard({
   onBuildingDragStart,
   specialAvailable,
   onSpecialAction,
+  onSpecialTile,
 }: {
   p: PlayerState;
   playerIdx: PlayerIndex;
@@ -358,6 +465,8 @@ function FactionBoard({
   specialAvailable?: boolean | undefined;
   /** 点击星际要塞（PI 热区）→ 与「特殊行动」按钮同效。 */
   onSpecialAction?: (() => void) | undefined;
+  /** 点击族板能力八边形（bescods）→ 等效特殊行动按钮并锁定该行动。 */
+  onSpecialTile?: ((id: SpecialActionId) => void) | undefined;
 }): ReactElement {
   const cal = factionCalibration(faction);
   const filter = BUILDING_COLOR_FILTER[color];
@@ -480,30 +589,104 @@ function FactionBoard({
         />
       ) : null}
 
-      {/* 星际要塞（PI）特殊行动热区：PI 已建成（面板剩余 0）时出现在原槽位，
-          自己回合且特殊行动合法 → 高亮可点（与「特殊行动」按钮同效） */}
-      {p.buildings.pi === 0 && onSpecialAction !== undefined ? (
-        <button
-          type="button"
-          className={`mat-pi-hotzone overlay${specialAvailable === true ? ' available' : ''}`}
-          style={{ ...at(cal.piSlot), width: `${(BUILDING_SPRITE.pi.width * 100).toFixed(2)}%` }}
-          data-testid={`mat-pi-action-${playerIdx}`}
-          disabled={specialAvailable !== true}
-          title={specialAvailable === true ? '星际要塞特殊行动（同特殊行动按钮）' : '星际要塞特殊行动（当前不可用）'}
-          onClick={() => onSpecialAction()}
-        />
+      {/* 星际要塞（PI）特殊行动：已建成未用 → 热区可点（与「特殊行动」按钮同效）；
+          本轮已用 → 在原槽位盖 action token（moweyds-ring/ambas-swap/firaks-down/ivits-sp/tinkeroids-tile） */}
+      {p.buildings.pi === 0 ? (
+        (() => {
+          const piSpecial = PI_SPECIAL_ACTION[faction];
+          const piUsed =
+            piSpecial !== undefined && (p.specialUsed.includes(piSpecial) || p.roundAbilityUsed.includes(piSpecial));
+          if (piUsed) {
+            return (
+              <img
+                className="mat-used-token overlay"
+                style={{ ...at(cal.piSlot), width: `${(BUILDING_SPRITE.pi.width * 100).toFixed(2)}%` }}
+                src={ACTION_TOKEN_IMAGE}
+                alt="已用"
+                title="星际要塞特殊行动：本轮已用"
+                data-testid={`mat-pi-used-${playerIdx}`}
+              />
+            );
+          }
+          return onSpecialAction !== undefined ? (
+            <button
+              type="button"
+              className={`mat-pi-hotzone overlay${specialAvailable === true ? ' available' : ''}`}
+              style={{ ...at(cal.piSlot), width: `${(BUILDING_SPRITE.pi.width * 100).toFixed(2)}%` }}
+              data-testid={`mat-pi-action-${playerIdx}`}
+              disabled={specialAvailable !== true}
+              title={specialAvailable === true ? '星际要塞特殊行动（同特殊行动按钮）' : '星际要塞特殊行动（当前不可用）'}
+              onClick={() => onSpecialAction()}
+            />
+          ) : null;
+        })()
       ) : null}
 
-      {/* QIC 学院（ac2）特殊行动格：本轮已用 → 在原槽位盖 action token */}
-      {p.buildings.ac2 === 0 && p.specialUsed.includes('ac2') ? (
-        <img
-          className="mat-used-token overlay"
-          style={{ ...at(cal.ac2Slot), width: `${(BUILDING_SPRITE.academy.width * 0.85 * 100).toFixed(2)}%` }}
-          src={ACTION_TOKEN_IMAGE}
-          alt="已用"
-          title="QIC 学院 +1q：本轮已用"
-          data-testid={`mat-used-ac2-${playerIdx}`}
-        />
+      {/* tinkeroids/moweyds 3 步改造星球标注（setup 抽取的 3 种 3 铲星球，
+          放入大轮盘下三小格——物理版用星球标记占格，数字版用色块） */}
+      {cal.threeStepSlots !== undefined && p.terraformThreeStep.length > 0
+        ? cal.threeStepSlots.map((slot, i) => {
+            const planet = p.terraformThreeStep[i];
+            if (planet === undefined) return null;
+            return (
+              <span
+                key={planet}
+                className="mat-three-step overlay"
+                style={{ ...at(slot), background: PLANET_COLORS[planet] }}
+                title={`3 步改造星球：${planetName(planet)}`}
+                data-testid={`mat-three-step-${playerIdx}-${i}`}
+              />
+            );
+          })
+        : null}
+
+      {/* 族板印刷能力八边形（bescods 推进最低轨）：可点时高亮；本轮已用 → 盖 action token */}
+      {cal.specialSlot !== undefined && BOARD_SPECIAL_ACTION[faction] !== undefined ? (
+        p.roundAbilityUsed.includes(BOARD_SPECIAL_ACTION[faction]!) ? (
+          <img
+            className="mat-used-token overlay"
+            style={{ ...at(cal.specialSlot), width: '11%' }}
+            src={ACTION_TOKEN_IMAGE}
+            alt="已用"
+            title="种族特殊行动：本轮已用"
+            data-testid={`mat-special-used-${playerIdx}`}
+          />
+        ) : onSpecialTile !== undefined ? (
+          <button
+            type="button"
+            className={`mat-pi-hotzone overlay mat-special-hotzone${specialAvailable === true ? ' available' : ''}`}
+            style={{ ...at(cal.specialSlot), width: '14%' }}
+            data-testid={`mat-special-action-${playerIdx}`}
+            disabled={specialAvailable !== true}
+            title={specialAvailable === true ? '种族特殊行动（等效特殊行动按钮并锁定）' : '种族特殊行动（当前不可用）'}
+            onClick={() => onSpecialTile(BOARD_SPECIAL_ACTION[faction]!)}
+          />
+        ) : null
+      ) : null}
+
+      {/* QIC 学院（ac2）特殊行动八边形：已建成未用 → 热点可点（直发 ac2）；已用 → 盖 action token。
+          基础板八边形在学院槽正下方（ac2ActionSlot），LF 板与槽同心（回退 ac2Slot） */}
+      {p.buildings.ac2 === 0 ? (
+        p.specialUsed.includes('ac2') ? (
+          <img
+            className="mat-used-token overlay"
+            style={{ ...at(cal.ac2ActionSlot ?? cal.ac2Slot), width: `${(BUILDING_SPRITE.academy.width * 0.85 * 100).toFixed(2)}%` }}
+            src={ACTION_TOKEN_IMAGE}
+            alt="已用"
+            title="QIC 学院 +1q：本轮已用"
+            data-testid={`mat-used-ac2-${playerIdx}`}
+          />
+        ) : onSpecialTile !== undefined ? (
+          <button
+            type="button"
+            className={`mat-pi-hotzone overlay mat-special-hotzone${specialAvailable === true ? ' available' : ''}`}
+            style={{ ...at(cal.ac2ActionSlot ?? cal.ac2Slot), width: `${(BUILDING_SPRITE.academy.width * 100).toFixed(2)}%` }}
+            data-testid={`mat-ac2-action-${playerIdx}`}
+            disabled={specialAvailable !== true}
+            title={specialAvailable === true ? 'QIC 学院行动（+1Q，baltaks +4c）' : 'QIC 学院行动（当前不可用）'}
+            onClick={() => onSpecialTile('ac2')}
+          />
+        ) : null
       ) : null}
 
       {/* 行动红框：刚解锁的建筑槽位（建造/升级后 ~5s 提示） */}

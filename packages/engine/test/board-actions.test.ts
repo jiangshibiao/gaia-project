@@ -160,8 +160,10 @@ describe('特殊行动', () => {
     expect(action).toBeDefined();
     const next = applyAction(state, action);
     const p = next.players[0]!;
+    // 充能 4（I→II 优先：I 全转完才能 II→III）：I 4 全到 II
     expect(p.power.bowl1).toBe(0);
     expect(p.power.bowl2).toBe(4);
+    expect(p.power.bowl3).toBe(0);
     expect(p.specialUsed).toContain('tech9');
     expect(specialsOf(next).some((a) => a.action === 'tech9')).toBe(false);
   });

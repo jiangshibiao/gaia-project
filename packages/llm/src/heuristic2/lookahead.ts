@@ -103,7 +103,7 @@ export function pruneCandidates(ctx: EvalCtx, scored: ScoredAction[]): ScoredAct
   return out;
 }
 
-/** 仿真后仍是我方行动？（pending 响应/setup 队首/当前行动者，与 actorOf 同口径）。 */
+/** 仿真后仍是我方行动？（pending 响应/turnHold 持闸/setup 队首/当前行动者，与 actorOf 同口径）。 */
 function stillMyTurn(state: GameState, seat: PlayerIndex): boolean {
   if (state.phase === 'game-over') return false;
   const pending = state.pending;
@@ -111,6 +111,7 @@ function stillMyTurn(state: GameState, seat: PlayerIndex): boolean {
     if (pending.kind === 'charge') return pending.queue[0]?.player === seat;
     return pending.player === seat;
   }
+  if (state.turnHold !== null) return state.turnHold === seat;
   if (state.phase === 'setup') return state.setupQueue[0] === seat;
   return state.currentPlayerIdx === seat;
 }

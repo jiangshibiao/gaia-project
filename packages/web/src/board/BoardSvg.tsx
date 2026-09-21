@@ -14,7 +14,7 @@
  *
  * 叠加层：星球（仅"与原画不同"的——gaia 转化/失落星球/无原画格）、
  * 建筑棋子图（buildings/*，LF 青/粉用近似色+hue-rotate）、lantids 附加矿、
- * 卫星（色点）、gaiaformer（GF 图）、进行中盖亚计划、power ring（powerring.png）、
+ * 卫星（色点）、gaiaformer（GF 图）、进行中盖亚计划、power ring（六边形内侧醒目蓝环）、
  * 飞船格徽标、联邦标记点。交互层保留透明 hex 热区/高亮/tooltip。
  *
  * 整体旋转：内层 g.board-rotate 绕全图中心转任意角度（viewBox 缩放/平移数学
@@ -39,7 +39,6 @@ import type { BuildingType, HexKey, HexState, PlanetType, PlayerIndex, ShipId } 
 import type { FilteredState } from '@gaia/protocol';
 import {
   BUILDING_COLOR_FILTER,
-  POWER_RING_IMAGE,
   buildingImage,
   buildingImageTrimmed,
   deepSpaceImage,
@@ -113,6 +112,9 @@ export interface BoardSvgProps {
   highlights?: ReadonlySet<HexKey> | undefined;
   /** 次级候选 hex（弱高亮，同样可点：联邦卫星选择态里非最少方案的格）。 */
   dimHighlights?: ReadonlySet<HexKey> | undefined;
+  /** 直点模式（轮到自己且未在选择态）：全图 hex 可点，由前端按点击位置推断操作
+   *  （自己建筑→升级、可建矿空地→建矿）；无高亮仅热区。 */
+  directClickAll?: boolean | undefined;
   /** 行动红框 hex（~5s 的提示性红框，不可点；建矿位/触发格等）。 */
   flashHexes?: readonly HexKey[] | undefined;
   onHexClick?: ((hex: HexKey) => void) | undefined;
@@ -273,7 +275,7 @@ function DeepSpaceLayer({ placements }: { placements: MapPlacements }): ReactEle
   );
 }
 
-export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function BoardSvg({ state, highlights, dimHighlights, flashHexes, onHexClick, onShipClick, snapPreview, selectedHexes, suppressHover }, ref): ReactElement {
+export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function BoardSvg({ state, highlights, dimHighlights, flashHexes, onHexClick, onShipClick, snapPreview, selectedHexes, suppressHover, directClickAll }, ref): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -574,7 +576,7 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
           {entries.map(({ key, hex, x, y }) => {
             const highlighted = highlights?.has(key) === true;
             const dim = !highlighted && dimHighlights?.has(key) === true;
-            const clickable = highlighted || dim;
+            const clickable = highlighted || dim || directClickAll === true;
             const hasArt = artCovered.has(key);
             const projectOwner = gaiaProjects.get(key);
             return (
@@ -596,14 +598,12 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                   </g>
                 ) : null}
                 {hex.powerRing === true ? (
-                  <image
-                    className="hex-power-ring"
-                    href={POWER_RING_IMAGE}
-                    x={-HEX_SIZE * 0.5}
-                    y={-HEX_SIZE * 0.5}
-                    width={HEX_SIZE}
-                    height={HEX_SIZE}
-                  />
+                  // 能量环（moweyds）：贴近六边形边缘的醒目蓝环（powerring.png 实物图太暗
+                  // 看不清，用户要求纯蓝环且与六边形差不多位置）。深色底环 + 亮蓝主环。
+                  <g className="hex-power-ring" data-testid={`power-ring-${key}`}>
+                    <circle r={HEX_SIZE * 0.8} fill="none" stroke="#0b1c2c" strokeWidth={HEX_SIZE * 0.15} />
+                    <circle r={HEX_SIZE * 0.8} fill="none" stroke="#3fa8ff" strokeWidth={HEX_SIZE * 0.085} />
+                  </g>
                 ) : null}
                 {hex.building !== undefined ? (
                   <g

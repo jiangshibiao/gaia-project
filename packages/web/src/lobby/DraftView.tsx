@@ -12,8 +12,9 @@ import type { FormEvent, ReactElement } from 'react';
 import { FACTIONS } from '@gaia/engine';
 import type { FactionId, PlayerIndex } from '@gaia/engine';
 import type { DraftState, RoomState } from '@gaia/protocol';
-import { factionBoardImage, factionImage } from '../assets';
-import { factionName } from '../game/display';
+import { factionBoardImage, factionImage, factionPanelImage, finalScoringImage, roundScoringImage } from '../assets';
+import { factionName, finalScoringName, roundScoringName } from '../game/display';
+import { BoardSvg } from '../board/BoardSvg';
 import type { GameStore } from '../game/store';
 import { useGameStore } from '../game/store';
 
@@ -125,7 +126,10 @@ export function DraftView({ store, room, draft }: { store: GameStore; room: Room
                 className={`draft-faction${held ? ' held' : ''}${clickable ? '' : ' disabled'}`}
                 style={held ? { borderColor: seatColor(holder) } : undefined}
                 data-testid={`draft-faction-${faction}`}
-                disabled={!clickable}
+                // 不用 disabled 属性（它会吞掉 hover/focus 事件）——锁定后（friendly 全员
+                // 或对手持有）鼠标悬浮/聚焦仍需能预览种族面板；点击由 onFactionClick 的
+                // clickable 逻辑拦截（friendly 已持有/非我回合天然无效）。
+                aria-disabled={!clickable}
                 onClick={() => onFactionClick(faction)}
                 onMouseEnter={() => setHoverFaction(faction)}
                 onMouseLeave={() => setHoverFaction(null)}
@@ -146,13 +150,64 @@ export function DraftView({ store, room, draft }: { store: GameStore; room: Room
         })}
       </ul>
 
-      {/* 悬浮种族面板预览（右侧固定，pointer-events none 不挡选族操作） */}
+      {/* 规则书 setup 信息公开（选族期间可见）：顺位（先手洗牌）/ 回合计分 / 终局计分 / 地图 */}
+      {draft.preview !== undefined ? (
+        <div className="draft-info" data-testid="draft-info">
+          <div className="draft-info-row" data-testid="draft-turn-order">
+            <span className="draft-info-label">顺位</span>
+            {draft.turnOrder.map((seat, i) => (
+              <span key={seat} className="draft-order-chip" style={{ borderColor: seatColor(seat), color: seatColor(seat) }}>
+                {i + 1}. {seatNickname(room, seat)}
+                {i === 0 ? '（先手）' : ''}
+              </span>
+            ))}
+          </div>
+          <div className="draft-info-row" data-testid="draft-scoring">
+            <span className="draft-info-label">回合计分</span>
+            {draft.preview.board.roundScoring.map((t, i) => (
+              <img
+                key={t}
+                className="draft-scoring-img"
+                src={roundScoringImage(t)}
+                alt={`第 ${i + 1} 轮：${roundScoringName(t)}`}
+                title={`第 ${i + 1} 轮：${roundScoringName(t)}`}
+              />
+            ))}
+            <span className="draft-info-label">终局条件</span>
+            {draft.preview.board.finalScoring.map((f) => (
+              <img
+                key={f}
+                className="draft-scoring-img"
+                src={finalScoringImage(f)}
+                alt={finalScoringName(f)}
+                title={finalScoringName(f)}
+              />
+            ))}
+          </div>
+          <div className="draft-info-map" data-testid="draft-map">
+            <BoardSvg state={draft.preview} />
+          </div>
+        </div>
+      ) : null}
+
+      {/* 悬浮种族面板预览（右侧固定，pointer-events none 不挡选族操作；
+          LF 局右侧并放该族飞船板块图，便于查看增强/削弱） */}
       {hoverFaction !== null ? (
         <div className="draft-hover-pop" data-testid="draft-hover-pop">
-          <img
-            src={factionBoardImage(hoverFaction) ?? factionImage(hoverFaction)}
-            alt={`${factionName(hoverFaction)}族板`}
-          />
+          <div className="draft-hover-imgs">
+            <img
+              className="draft-hover-board"
+              src={factionBoardImage(hoverFaction) ?? factionImage(hoverFaction)}
+              alt={`${factionName(hoverFaction)}族板`}
+            />
+            {lostFleet ? (
+              <img
+                className="draft-hover-panel"
+                src={factionPanelImage(hoverFaction)}
+                alt={`${factionName(hoverFaction)}飞船板块`}
+              />
+            ) : null}
+          </div>
           <span>{factionName(hoverFaction)}</span>
         </div>
       ) : null}

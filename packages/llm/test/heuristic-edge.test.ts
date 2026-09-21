@@ -125,11 +125,14 @@ describe('健壮性', () => {
     expect(prescreen(state, actor, mixed, 3)).toHaveLength(3);
   });
 
-  /** 当前应行动的玩家（与 helpers/bench 同口径）。 */
+  /** 当前应行动的玩家（与 helpers/bench 同口径：pending 响应者 > turnHold 持闸 > setup 队首）。 */
   function actingPlayer(state: GameState): PlayerIndex {
     const pending = state.pending;
     if (pending !== null) {
       return pending.kind === 'charge' ? pending.queue[0]!.player : pending.player;
+    }
+    if (state.turnHold !== null) {
+      return state.turnHold;
     }
     return state.phase === 'setup' ? state.setupQueue[0]! : state.currentPlayerIdx;
   }

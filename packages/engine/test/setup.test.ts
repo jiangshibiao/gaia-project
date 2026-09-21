@@ -57,6 +57,18 @@ describe('确定性', () => {
       newGame({ playerCount: 2, seed: 1, factions: ['terrans', 'terrans'] }),
     ).toThrow(IllegalActionError);
   });
+
+  it('turnOrder：指定初始行动顺序（缺省座位序；非法排列抛错）', () => {
+    const s = newGame({ ...CONFIG_2P, turnOrder: [1, 0] });
+    expect(s.turnOrder).toEqual([1, 0]);
+    expect(s.setupQueue[0]).toBe(1);
+    expect(s.config.turnOrder).toEqual([1, 0]);
+    const d = newGame(CONFIG_2P);
+    expect(d.turnOrder).toEqual([0, 1]);
+    expect(d.config.turnOrder).toBeUndefined();
+    expect(() => newGame({ ...CONFIG_2P, turnOrder: [0, 0] })).toThrow(IllegalActionError);
+    expect(() => newGame({ ...CONFIG_2P, turnOrder: [0, 1, 2] })).toThrow(IllegalActionError);
+  });
 });
 
 describe('地图', () => {

@@ -35,7 +35,7 @@ import {
   type HexKey,
   type ShipId,
 } from '../src/index.js';
-import { actionPhase, legalOf } from './helpers.js';
+import { actionPhase, endTurn, legalOf } from './helpers.js';
 
 const CONFIG_2P: GameConfig = { playerCount: 2, seed: 42, factions: ['terrans', 'lantids'], lostFleet: true };
 const CONFIG_3P: GameConfig = {
@@ -317,7 +317,8 @@ describe('探索飞船', () => {
     expect(next.players[0]!.shuttles).toEqual([{ ship, slot: 0 }]);
     expect(next.players[0]!.exploredShips).toContain(ship);
     expect(next.board.ships.find((x) => x.id === ship)!.shuttleSlots[0]).toBe(0);
-    // 行动阶段轮到玩家 1（无充能邀约）：玩家 1 探索同船 → slot 1 + 充能 2
+    // 行动阶段轮到玩家 1（无充能邀约；玩家 0 确认完成后）：玩家 1 探索同船 → slot 1 + 充能 2
+    next = endTurn(next);
     expect(next.currentPlayerIdx).toBe(1);
     const a1 = legalOf(next).find(
       (a): a is Extract<Action, { type: 'explore-ship' }> => a.type === 'explore-ship' && a.ship === ship,
@@ -370,6 +371,7 @@ describe('探索飞船', () => {
     );
     expect(next.players[0]!.vp).toBe(13);
     // taklons：5vp + brainstone→gaia
+    next = endTurn(next);
     expect(next.currentPlayerIdx).toBe(1);
     next = applyAction(
       next,
@@ -378,6 +380,7 @@ describe('探索飞船', () => {
     expect(next.players[1]!.vp).toBe(15);
     expect(next.players[1]!.power.brainstone).toBe('gaia');
     // nevlas：5vp + 弃 1pw（任一区；规范化 I→II→III）
+    next = endTurn(next);
     expect(next.currentPlayerIdx).toBe(2);
     const tokensBefore =
       next.players[2]!.power.bowl1 + next.players[2]!.power.bowl2 + next.players[2]!.power.bowl3;
@@ -721,6 +724,7 @@ describe('检查神器', () => {
     next = structuredClone(next);
     next.players[0]!.power.bowl3 = 6;
     next.currentPlayerIdx = 0;
+    next.turnHold = null; // 手术连续行动：清完成闸（同玩家再行动）
     next = applyAction(
       next,
       legalOf(next).find((x) => x.type === 'inspect-artifact' && x.artifact === 'art-3k1q')!,
@@ -730,6 +734,7 @@ describe('检查神器', () => {
     next = structuredClone(next);
     next.players[0]!.power.bowl3 = 6;
     next.currentPlayerIdx = 0;
+    next.turnHold = null;
     next = applyAction(
       next,
       legalOf(next).find((x) => x.type === 'inspect-artifact' && x.artifact === 'art-5c2o')!,
@@ -765,18 +770,21 @@ describe('检查神器', () => {
     next = structuredClone(next);
     next.players[0]!.power.bowl3 = 6;
     next.currentPlayerIdx = 0;
+    next.turnHold = null; // 手术连续行动：清完成闸
     // art-gaia：gaia L2 → +6vp
     let next2 = inspect(next, 'art-gaia');
     expect(next2.players[0]!.vp).toBe(vp0 + 9 + 6);
     next2 = structuredClone(next2);
     next2.players[0]!.power.bowl3 = 6;
     next2.currentPlayerIdx = 0;
+    next2.turnHold = null;
     // art-track：2 条 ≥L3 轨 → +6vp
     let next3 = inspect(next2, 'art-track');
     expect(next3.players[0]!.vp).toBe(vp0 + 9 + 6 + 6);
     next3 = structuredClone(next3);
     next3.players[0]!.power.bowl3 = 6;
     next3.currentPlayerIdx = 0;
+    next3.turnHold = null;
     // art-planet：+3vp + 每已殖民星球类型 1vp
     const types = countUnits(next3, 0, 'planet-type');
     let next4 = inspect(next3, 'art-planet');
@@ -784,6 +792,7 @@ describe('检查神器', () => {
     next4 = structuredClone(next4);
     next4.players[0]!.power.bowl3 = 6;
     next4.currentPlayerIdx = 0;
+    next4.turnHold = null;
     // art-deep：每已殖民深空扇区 3vp
     const deep = countUnits(next4, 0, 'deep-space-sector');
     const next5 = inspect(next4, 'art-deep');
@@ -1119,6 +1128,24 @@ describe('LF 新种族', () => {
       after3 = applyAction(after3, { type: 'decline-charge' });
     }
     expect(after3.pending).toBeNull();
+  });
+
+  it('gain-tech-tile 升 L5 携带 flipToken（枚举↔apply 一致性回归：曾丢失抛 no-flippable-token）', () => {
+    const state = rig((s) => {
+      s.players[0]!.research.nav = 4;
+      s.players[0]!.federationTokens.push({ id: 'fedlf2', flipped: false });
+      s.players[0]!.resources.qic = 3; // Lost Planet 候选格补程得起
+      s.pending = { kind: 'gain-tech-tile', player: 0, fromShips: false, thenCharge: [] };
+    });
+    const a = legalOf(state).find(
+      (x): x is Extract<Action, { type: 'gain-tech-tile' }> => x.type === 'gain-tech-tile' && x.research === 'nav',
+    );
+    expect(a).toBeDefined();
+    expect(a!.flipToken).toBe('fedlf2');
+    expect(a!.lostPlanetHex).toBeDefined();
+    const next = applyAction(state, a!);
+    expect(next.players[0]!.research.nav).toBe(5);
+    expect(next.players[0]!.federationTokens.find((t) => t.id === 'fedlf2')!.flipped).toBe(true);
   });
 });
 

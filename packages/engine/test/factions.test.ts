@@ -47,7 +47,7 @@ describe('taklons / lantids / nevlas PI', () => {
     const next = applyAction(state, { type: 'charge' });
     const p = next.players[0]!;
     expect(p.powerStats.gained).toBe(gainedBefore + 1);
-    // 先拿 token（I 区 2+1=3）再充 2：I→II 2 个
+    // 先拿 token（I 区 2+1=3）再充 2（I→II 优先）：I→II 2 个
     expect(p.power.bowl1).toBe(1);
     expect(p.power.bowl2).toBe(2);
   });

@@ -40,6 +40,7 @@ function actorOfState(state: GameState): PlayerIndex | null {
     if (pending.kind === 'charge') return pending.queue[0]?.player ?? null;
     return pending.player;
   }
+  if (state.turnHold !== null) return state.turnHold;
   if (state.phase === 'setup') return state.setupQueue[0] ?? null;
   return state.currentPlayerIdx;
 }

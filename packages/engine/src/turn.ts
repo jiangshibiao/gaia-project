@@ -7,7 +7,7 @@
  * （收入 → 盖亚）→ currentPlayerIdx=turnOrder[0]；
  * round==6 全员 pass → 终局计分（score.ts finalScoring）。
  */
-import type { GameState, PlayerIndex, ResearchTrack } from './types.js';
+import type { GameState, PlayerIndex, PlayerState, ResearchTrack } from './types.js';
 import { FACTIONS } from './data/factions.js';
 import { RESEARCH_TRACKS } from './data/research.js';
 import { TECH_TILES } from './data/techs.js';
@@ -41,8 +41,44 @@ export function settleRoundStart(state: GameState): void {
   for (const i of state.turnOrder) {
     settleIncome(state, i);
   }
-  settleGaiaPhase(state);
-  state.lastEvents = [...state.lastEvents, `round-${state.round}-start`];
+  // 收入充能顺序待决的玩家逐个置为 pending；全部结清后才进入盖亚阶段。
+  activateNextIncomePending(state);
+}
+
+/**
+ * 收入决策串联：弹出 incomeQueue 队首置为 pending income-order；
+ * 队列空 → 盖亚阶段 + 轮首事件（盖亚阶段自身的 PI/tinkering 决策由
+ * activateNextGaiaPending 继续串联）。收入顺序响应行动处理时调用（actions/income.ts）。
+ */
+export function activateNextIncomePending(state: GameState): void {
+  const next = state.incomeQueue.shift();
+  if (next === undefined) {
+    settleGaiaPhase(state);
+    state.lastEvents = [...state.lastEvents, `round-${state.round}-start`];
+    return;
+  }
+  state.pending = { kind: 'income-order', player: next.player, tokens: next.tokens, charge: next.charge };
+}
+
+/** 收入"加完 token 还能全部推至 III 区（转满）"判定：转满则任意顺序结果一致，无需玩家决策。 */
+function incomeCanFullyCharge(p: PlayerState, tokens: number, charge: number): boolean {
+  const pw = p.power;
+  const capacity =
+    2 * (pw.bowl1 + tokens + (pw.brainstone === 'bowl1' ? 1 : 0)) +
+    (pw.bowl2 + (pw.brainstone === 'bowl2' ? 1 : 0));
+  return charge >= capacity;
+}
+
+/**
+ * 收入充能顺序是否需要玩家决策：同时含 token 与充能，且
+ * - 充能 > II 区 token 数（充能会碰到 I 区——新 token 参不参与充能才产生差异；
+ *   充能 ≤ II 区时两种顺序结果逐点一致，不必打扰玩家）；
+ * - 且加完 token 也无法转满（转满则任意顺序结果一致）。
+ */
+function incomeOrderNeedsDecision(p: PlayerState, tokens: number, charge: number): boolean {
+  if (tokens <= 0 || charge <= 0) return false;
+  const bowl2Tokens = p.power.bowl2 + (p.power.brainstone === 'bowl2' ? 1 : 0);
+  return charge > bowl2Tokens && !incomeCanFullyCharge(p, tokens, charge);
 }
 
 /**
@@ -135,7 +171,19 @@ function settleIncome(state: GameState, idx: PlayerIndex): void {
     merged.powerToken = (merged.powerToken ?? 0) + (g.powerToken ?? 0);
     merged.gaiaformer = (merged.gaiaformer ?? 0) + (g.gaiaformer ?? 0);
   }
-  applyGain(state, idx, merged);
+  // 收入充能顺序：同时含 token 与充能、且顺序有实际影响（充能会碰到 I 区）
+  // 且无法转满时——defer 给玩家决策（incomeQueue），其余照常自动结算。
+  const tokens = merged.powerToken ?? 0;
+  const charge = merged.chargePower ?? 0;
+  if (incomeOrderNeedsDecision(p, tokens, charge)) {
+    const rest = { ...merged };
+    delete rest.powerToken;
+    delete rest.chargePower;
+    applyGain(state, idx, rest);
+    state.incomeQueue.push({ player: idx, tokens, charge });
+  } else {
+    applyGain(state, idx, merged);
+  }
   // LF art-pwt：每枚 +2 power token 直接 III 区。
   const artPwt = p.artifacts.filter((a) => a.id === 'art-pwt').length;
   if (artPwt > 0) {

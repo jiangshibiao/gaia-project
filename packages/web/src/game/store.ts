@@ -58,11 +58,8 @@ export interface SessionStorageLike {
   readonly length: number;
 }
 
-/** localStorage key 前缀：`gaia:token:<房间号>` / `gaia:owner:<房间号>`。 */
+/** localStorage key 前缀：`gaia:token:<房间号>`。 */
 export const TOKEN_KEY_PREFIX = 'gaia:token:';
-export const OWNER_KEY_PREFIX = 'gaia:owner:';
-/** owner 标记新鲜窗口：被动 close 时他 tab 在此窗口内抢座才判为"被接管"。 */
-export const TAKEOVER_WINDOW_MS = 10_000;
 
 /** 浏览器环境取 localStorage；隐私模式/非浏览器降级为 null（不持久化）。 */
 function defaultStorage(): SessionStorageLike | null {
@@ -71,10 +68,6 @@ function defaultStorage(): SessionStorageLike | null {
   } catch {
     return null;
   }
-}
-
-function randomTabId(): string {
-  return `tab-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
 }
 
 const defaultFactory: WebSocketFactory = (url) =>
@@ -228,8 +221,6 @@ export interface GameStoreState {
   thinkingSeats: PlayerIndex[];
   gameOver: GameOverInfo | null;
   lastError: { code: string; message: string } | null;
-  /** 连接被另一标签页（同 token）接管：停止自动重连，等用户 reclaim/leaveRoom。 */
-  takenOver: boolean;
   /** 可用 AI 插件清单（list_agent_plugins 拉取；大厅 AI 席位下拉用）。 */
   agentPlugins: AgentPluginMeta[];
   /** 服务器默认 AI spec（agent_plugins 应答携带）。 */
@@ -251,7 +242,6 @@ const INITIAL_STATE: GameStoreState = {
   thinkingSeats: [],
   gameOver: null,
   lastError: null,
-  takenOver: false,
   agentPlugins: [],
   defaultAISpec: null,
   review: null,
@@ -260,12 +250,8 @@ const INITIAL_STATE: GameStoreState = {
 export interface GameStoreOptions {
   /** 被动断线后的重连延时，默认 1000ms（测试传 0）。 */
   reconnectDelayMs?: number;
-  /** token/owner 持久化存储，默认 localStorage；传 null 关闭持久化。 */
+  /** token 持久化存储，默认 localStorage；传 null 关闭持久化。 */
   storage?: SessionStorageLike | null;
-  /** 本标签页 id（owner 标记用），默认随机生成。 */
-  tabId?: string;
-  /** 接管判定窗口，默认 TAKEOVER_WINDOW_MS。 */
-  takeoverWindowMs?: number;
   /** 导出记录下载钩子，默认浏览器 Blob 下载（测试注入 spy）。 */
   download?: DownloadFn;
 }
@@ -277,8 +263,6 @@ export class GameStore {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly reconnectDelayMs: number;
   private readonly storage: SessionStorageLike | null;
-  private readonly tabId: string;
-  private readonly takeoverWindowMs: number;
   private readonly download: DownloadFn;
   /** import_game 已发出、等待服务器重放校验应答的记录（snapshot=通过 / error=失败）。 */
   private pendingImport: GameRecord | null = null;
@@ -291,8 +275,6 @@ export class GameStore {
   ) {
     this.reconnectDelayMs = options.reconnectDelayMs ?? 1000;
     this.storage = options.storage === undefined ? defaultStorage() : options.storage;
-    this.tabId = options.tabId ?? randomTabId();
-    this.takeoverWindowMs = options.takeoverWindowMs ?? TAKEOVER_WINDOW_MS;
     this.download = options.download ?? defaultDownload;
     client.onMessage((msg) => this.handleMessage(msg));
     client.onOpen(() => this.handleOpen());
@@ -474,13 +456,6 @@ export class GameStore {
     return false;
   }
 
-  /** 被接管后手动抢回座位：清标记态并重连（连上自动 resume，他 tab 将被踢）。 */
-  reclaim(): void {
-    if (!this.state.takenOver) return;
-    this.patch({ takenOver: false });
-    this.connect();
-  }
-
   /**
    * 返回大厅：主动离开。已入房/入对局时先发 leave（服务端清 token 索引、
    * 座位标断线、广播、断开本连接），再清持久化会话、以无 token 干净身份重连。
@@ -504,7 +479,6 @@ export class GameStore {
     const code = this.roomCode();
     if (this.storage !== null && code !== null) {
       this.storage.removeItem(TOKEN_KEY_PREFIX + code);
-      this.storage.removeItem(OWNER_KEY_PREFIX + code);
     }
     this.persistedCode = null;
     this.patch({
@@ -516,7 +490,6 @@ export class GameStore {
       legalActions: [],
       seq: 0,
       gameOver: null,
-      takenOver: false,
     });
   }
 
@@ -532,35 +505,6 @@ export class GameStore {
     this.storage.setItem(TOKEN_KEY_PREFIX + code, this.state.token);
   }
 
-  /** 抢座/入座前标记"本 tab 持有该房间座位"，供他 tab 判定接管。 */
-  private writeOwnerMarker(): void {
-    const code = this.roomCode();
-    if (this.storage === null || code === null) return;
-    this.storage.setItem(
-      OWNER_KEY_PREFIX + code,
-      JSON.stringify({ tabId: this.tabId, at: Date.now() }),
-    );
-  }
-
-  /** 被动 close 时判定：他 tab 在窗口期内抢座（owner 标记新鲜且非本 tab）。 */
-  private foreignFreshOwner(): boolean {
-    const code = this.roomCode();
-    if (this.storage === null || code === null) return false;
-    const raw = this.storage.getItem(OWNER_KEY_PREFIX + code);
-    if (raw === null) return false;
-    try {
-      const marker = JSON.parse(raw) as { tabId?: unknown; at?: unknown };
-      return (
-        typeof marker.tabId === 'string' &&
-        marker.tabId !== this.tabId &&
-        typeof marker.at === 'number' &&
-        Date.now() - marker.at < this.takeoverWindowMs
-      );
-    } catch {
-      return false;
-    }
-  }
-
   private requireToken(): string {
     if (this.state.token === null) {
       throw new Error('尚无 credentials token——先 create/join/resume');
@@ -572,11 +516,10 @@ export class GameStore {
     this.client.send(msg);
   }
 
-  /** 连上：若持 token（曾入房/入过对局）自动 resume 抢回座位（先写 owner 标记）。 */
+  /** 连上：若持 token（曾入房/入过对局）自动 resume 恢复座位。 */
   private handleOpen(): void {
     this.patch({ connection: 'connected' });
     if (this.state.token !== null) {
-      this.writeOwnerMarker();
       this.client.send({
         type: 'resume',
         protocolVersion: PROTOCOL_VERSION,
@@ -585,16 +528,9 @@ export class GameStore {
     }
   }
 
-  /**
-   * 被动 close：他 tab 新鲜抢座 → takenOver（停自动重连，避免两标签互踢）；
-   * 否则一律安排自动重连。
-   */
+  /** 被动 close：一律安排自动重连（同座位允许多地共存，无接管态）。 */
   private handleClose(): void {
     if (this.intentionalClose) return;
-    if (this.state.token !== null && this.foreignFreshOwner()) {
-      this.patch({ connection: 'disconnected', takenOver: true });
-      return;
-    }
     this.patch({ connection: 'disconnected' });
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(() => {

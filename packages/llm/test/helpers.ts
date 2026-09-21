@@ -19,11 +19,14 @@ export interface Snapshot {
   legal: Action[];
 }
 
-/** 当前应行动的玩家（与 engine playGame 同口径）。 */
+/** 当前应行动的玩家（与 engine playGame 同口径：pending 响应者 > turnHold 持闸 > setup 队首）。 */
 function actingPlayer(state: GameState): PlayerIndex {
   const pending = state.pending;
   if (pending !== null) {
     return pending.kind === 'charge' ? pending.queue[0]!.player : pending.player;
+  }
+  if (state.turnHold !== null) {
+    return state.turnHold;
   }
   if (state.phase === 'setup') {
     return state.setupQueue[0]!;

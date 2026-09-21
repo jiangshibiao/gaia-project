@@ -55,12 +55,28 @@ export function completeSetup(
   if (s.phase !== 'action') {
     throw new Error('completeSetup: 未能进入行动阶段');
   }
-  return s;
+  // 第 1 轮收入可能产生收入顺序待决（tests 大多不关心顺序）——自动结清，
+  // 返回干净行动态（盖亚阶段的 terrans/itars/tinkering pending 不受影响）。
+  return flushIncome(s);
 }
 
 /** newGame + 完成 setup，进入第 1 轮行动阶段。 */
 export function actionPhase(config: GameConfig, pick?: (legal: Action[], s: GameState) => Action): GameState {
   return completeSetup(newGame(config), pick);
+}
+
+/** 收入充能顺序待决自动冲刷（tokens-first）：测试不关心收入顺序的场景用。 */
+export function flushIncome(state: GameState): GameState {
+  let s = state;
+  for (let i = 0; i < 8 && s.pending?.kind === 'income-order'; i++) {
+    s = applyAction(s, { type: 'income-order', order: 'tokens-first' });
+  }
+  return s;
+}
+
+/** 完成回合（turnHold 放闸）：主行动后需要推进到下一玩家时使用。 */
+export function endTurn(state: GameState): GameState {
+  return applyAction(state, { type: 'confirm-turn' });
 }
 
 /** 当前玩家的合法行动。 */

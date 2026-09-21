@@ -19,8 +19,10 @@
  *   平整无透视），收入轨布局与模板有系统性差异（矿/TS 行整体右移、
  *   行间距更宽），用 ReadMediaFile 分区放大单独逐点标定（两板同组
  *   照片、几何一致，已抽查互验，共用一份标定）；
- * - moweyds：wellplayed.ch 官方渲染图（990×641，青色大胡子），布局与模板
- *   逐点吻合，直接用 TEMPLATE（此前误用的 BGG 粉色俯视照是别族且倾斜，已弃）。
+ * - moweyds：BGG 9503664 西班牙版开箱照下半块（Octopoides，2950×1879），
+ *   与 9503663 同组照片同版型，共用 LF_PHOTO 标定（仅宽高比另给）。
+ *   曾误用 wellplayed 图——实为 space-giants 板（大胡子蓝老头；
+ *   moweyds 真身为触须章鱼怪，见 factions/mowyeds.jpg）。
  */
 import type { FactionId } from '@gaia/engine';
 import { factionBoardImage } from '../assets';
@@ -51,6 +53,13 @@ export interface FactionBoardCalibration {
   gaiaformerSlots: readonly RelPoint[];
   /** 格伦星人专属联邦片叠放位置（族板印有联邦徽章处，PI 格右侧大格；仅 gleens）。 */
   gleensFedSlot?: RelPoint;
+  /** 族板印刷的种族能力八边形热区中心（bescods 推进最低轨；PI 能力族走 piSlot 热区不在此列）。 */
+  specialSlot?: RelPoint;
+  /** QIC 学院特殊行动八边形（+1q；baltaks +4c）热区中心：基础板在学院槽正下方，
+   *  LF 板与学院槽基本同心（缺省回退 ac2Slot）。 */
+  ac2ActionSlot?: RelPoint;
+  /** tinkeroids/moweyds 3 步改造星球标注格（大轮盘下三小格；setup 抽取结果按序放入）。 */
+  threeStepSlots?: readonly RelPoint[];
 }
 
 /** 基础族扫描图宽高比（1753×1117）。 */
@@ -59,9 +68,6 @@ const BASE_ASPECT = 1753 / 1117;
 const LF_RENDER_ASPECT = 2000 / 1267;
 /** LF BGG 开箱正面照宽高比（2870×1851）。 */
 const LF_PHOTO_ASPECT = 2870 / 1851;
-
-/** moweyds 官方渲染图宽高比（wellplayed.ch，裁白边后 980×628）。 */
-const MOWEYDS_RENDER_ASPECT = 980 / 628;
 
 /** 模板（Terrans 标定；除 bescods 外 13 块基础族板与 LF 渲染板同布局）。 */
 const TEMPLATE = {
@@ -79,6 +85,8 @@ const TEMPLATE = {
   piSlot: { x: 0.172, y: 0.526 },
   ac1Slot: { x: 0.518, y: 0.526 },
   ac2Slot: { x: 0.63, y: 0.526 },
+  // ac2 特殊行动八边形在学院槽正下方（terrans/gleens 实测 ≈(0.636,0.60)）
+  ac2ActionSlot: { x: 0.636, y: 0.6 },
   gaiaformerSlots: [0.806, 0.884, 0.961].map((x) => ({ x, y: 0.352 })),
 } satisfies Omit<FactionBoardCalibration, 'image'>;
 
@@ -133,22 +141,45 @@ function buildCalibrations(): Record<FactionId, FactionBoardCalibration> {
   for (const f of BASE_FACTIONS) {
     out[f] = { image: factionBoardImage(f), ...TEMPLATE };
   }
-  out.bescods = { image: factionBoardImage('bescods'), ...TEMPLATE, ...BESCODS };
+  out.bescods = { image: factionBoardImage('bescods'), ...TEMPLATE, ...BESCODS, specialSlot: { x: 0.867, y: 0.219 } };
   // 格伦星人：专属联邦片放在族板印有联邦徽章的位置（PI 格右侧大格，实测徽章中心
   // (500,593)/1753×1117），不再叠压 PI 棋子（要塞与其他族同位显示）。
   out.gleens = { image: factionBoardImage('gleens'), ...TEMPLATE, gleensFedSlot: { x: 0.285, y: 0.531 } };
-  out.tinkeroids = { image: factionBoardImage('tinkeroids'), ...TEMPLATE, aspect: LF_RENDER_ASPECT };
+  out.tinkeroids = {
+    image: factionBoardImage('tinkeroids'),
+    ...TEMPLATE,
+    aspect: LF_RENDER_ASPECT,
+    // 3 步改造星球标注格（2000×1267 实测：大轮盘下三小格）
+    threeStepSlots: [
+      { x: 0.757, y: 0.583 },
+      { x: 0.79, y: 0.583 },
+      { x: 0.822, y: 0.583 },
+    ],
+  };
   for (const f of ['space-giants', 'darkanians'] as const) {
     out[f] = { image: factionBoardImage(f), ...LF_PHOTO };
   }
-  // moweyds：wellplayed 官方渲染图（990×641），布局与模板逐点吻合，直接用 TEMPLATE。
-  out.moweyds = { image: factionBoardImage('moweyds'), ...TEMPLATE, aspect: MOWEYDS_RENDER_ASPECT };
+  // moweyds：BGG 9503664 下半块（2950×1879），与 9503663 同组照片同版型，共用 LF_PHOTO 标定。
+  out.moweyds = {
+    image: factionBoardImage('moweyds'),
+    ...LF_PHOTO,
+    aspect: 2950 / 1879,
+    // 矿行印刷与 darkanians 不同（2026-09-22 实测：槽 x 起始 0.1578、间距 0.0485，
+    // LF_PHOTO 为 0.1707/0.0506——token 曾整体右偏；TS/实验室/PI/学院行实测与 LF_PHOTO 一致不动）
+    mineSlots: [0.1578, 0.2061, 0.2541, 0.3027, 0.3512, 0.3997, 0.4483, 0.4969].map((x) => ({ x, y: 0.903 })),
+    // 3 步改造星球标注格（2950×1879 实测）
+    threeStepSlots: [
+      { x: 0.745, y: 0.581 },
+      { x: 0.78, y: 0.581 },
+      { x: 0.814, y: 0.581 },
+    ],
+  };
   return out;
 }
 
 const CALIBRATIONS = buildCalibrations();
 
-/** 族板叠加校准（每个 FactionId 均有条目；moweyds.image 为 null）。 */
+/** 族板叠加校准（每个 FactionId 均有条目，全部有高清图）。 */
 export function factionCalibration(faction: FactionId): FactionBoardCalibration {
   return CALIBRATIONS[faction];
 }
@@ -186,7 +217,8 @@ export const BUILDING_SPRITE: Record<'mine' | 'ts' | 'lab' | 'pi' | 'academy', B
   academy: { width: 0.069, clip: 'inset(0% 4% 0% 5%)' },
 };
 
-/** gaiaformer 图宽度（相对图宽）。 */
-export const GAIAFORMER_WIDTH = 0.062;
+/** gaiaformer 图宽度（相对图宽）。棋子图内容占比仅 ~42%（透明边距大），
+ *  0.078 时可见内容 ≈ 0.032 ≈ 槽位八边形（曾 0.062，用户反馈明显偏小）。 */
+export const GAIAFORMER_WIDTH = 0.078;
 /** 脑石图宽度（相对图宽）。 */
 export const BRAINSTONE_WIDTH = 0.032;

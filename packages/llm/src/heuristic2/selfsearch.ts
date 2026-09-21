@@ -38,8 +38,20 @@ function actorOfState(state: GameState): PlayerIndex | null {
     if (pending.kind === 'charge') return pending.queue[0]?.player ?? null;
     return pending.player;
   }
+  if (state.turnHold !== null) return state.turnHold;
   if (state.phase === 'setup') return state.setupQueue[0] ?? null;
   return state.currentPlayerIdx;
+}
+
+/** 深搜内跳过回合完成闸：confirm-turn 是记账步骤（主行动后的免费兑换本就不建模），
+ *  持闸时自动确认——保持深搜与设闸前的行动序列语义一致。 */
+function skipTurnHold(state: GameState, seat: PlayerIndex): GameState | null {
+  if (state.turnHold !== seat) return state;
+  try {
+    return applyAction(state, { type: 'confirm-turn' }, { assumeLegal: true });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -120,12 +132,13 @@ function selfSearch(state: GameState, seat: PlayerIndex, myPly: number, st: Self
   );
   let best = -Infinity;
   for (const c of candidates) {
-    let s1: GameState;
+    let s1: GameState | null;
     try {
-      s1 = applyAction(state, c.action, { assumeLegal: true });
+      s1 = skipTurnHold(applyAction(state, c.action, { assumeLegal: true }), seat);
     } catch {
       continue;
     }
+    if (s1 === null) continue;
     // 行动后可能仍是我的决策点（免费行动/连锁），也可能轮到对手——快进到
     // 我的下一个决策点。沿途状态取我的叶估值与递归值的较大者（行动序列
     // 任意前缀都可以是"停止规划"的选择）。
@@ -170,11 +183,12 @@ export function chooseWithSelfSearch(
   for (const c of candidates) {
     let s1: GameState | null = null;
     try {
-      s1 = applyAction(state, c.action, { assumeLegal: true });
+      s1 = skipTurnHold(applyAction(state, c.action, { assumeLegal: true }), seat);
       st.nodes++;
     } catch {
       continue;
     }
+    if (s1 === null) continue;
     const stillMe = actorOfState(s1) === seat;
     const next = stillMe ? s1 : fastForwardToMe(s1, seat);
     const here = evaluateState(s1, seat, overrides);

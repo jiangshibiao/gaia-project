@@ -48,20 +48,33 @@ export const TRACK_LEVEL_Y: readonly number[] = [0.543, 0.462, 0.391, 0.281, 0.2
 /** 轨道内标准科技板槽中心 y（x 取所在轨列中心 + 印刷槽位右偏量）。
  *  注意（v9 修正，与实体板一致）：标准板槽在中部面板行，顶部行是高级板槽；
  *  印刷橙色槽位在面板内右偏 ≈+0.036x、y≈0.631（按 ResearchBoard.jpg 逐列实测）。 */
-export const TRACK_TECH_Y = 0.631;
+export const TRACK_TECH_Y = 0.66;
 
-/** 标准板槽 x 右偏量（印刷槽位中心 vs 轨列中心，实测全列一致）。 */
-export const TECH_SLOT_DX = 0.036;
+/** 标准板槽 x 右偏量（印刷槽位中心 vs 轨列中心）。
+ *  v10 修正：槽位锚点回到列面板中心——用户实测科技片在列面板内明显偏右上
+ *  （v9 的 +0.036 对准的是列内右下橙色电路装饰而非面板槽位中心，锚点错误）。 */
+export const TECH_SLOT_DX = 0.004;
 
 /** 高级科技板槽中心 y（x 取所在轨列中心；槽 i 对齐 TRACK_ORDER[i]）。
  *  实体板上高级科技片放在科技轨最上方（每轨顶一格），不是中部。 */
 export const ADV_TECH_Y = 0.127;
 
-/** 自由标准科技板槽（free1..3）中心（含印刷槽位右偏量，free1 实测 0.188）。 */
+/** 标准板槽（轨道位）逐列中心（2026-09-21 按 ResearchBoard.jpg 逐面板实测浅灰槽区中心：
+ *  列间距 ≈0.164（曾按 1/6≈0.167 致第 1 列命中后逐列递增右偏）；y = 面板行中心 0.657。 */
+export const TECH_TRACK_SLOTS: Record<ResearchTrack, RelPoint> = {
+  terra: { x: 0.084, y: 0.657 },
+  nav: { x: 0.248, y: 0.657 },
+  int: { x: 0.411, y: 0.657 },
+  gaia: { x: 0.574, y: 0.657 },
+  eco: { x: 0.737, y: 0.657 },
+  sci: { x: 0.9, y: 0.657 },
+};
+
+/** 自由标准科技板槽（free1..3）中心（同批实测：放片空白区中心；y 曾 0.817 偏下，上调至 0.79）。 */
 export const FREE_TECH_SLOTS: readonly RelPoint[] = [
-  { x: 0.188, y: 0.791 },
-  { x: 0.509, y: 0.791 },
-  { x: 0.83, y: 0.791 },
+  { x: 0.163, y: 0.79 },
+  { x: 0.481, y: 0.79 },
+  { x: 0.794, y: 0.79 },
 ];
 
 /** power 行动格中心（power1..7，左→右 = 费用 7/5/4/4/4/3/3）。
@@ -97,7 +110,7 @@ export const BOARD_ACTION_SLOTS: Record<BoardActionId, RelPoint> = {
   qic3: QIC_ACTION_SLOTS[2]!,
 };
 
-/** 标准科技板槽（9 位）：轨道位取列中心 + TECH_SLOT_DX（印刷槽位右偏）+ TRACK_TECH_Y，free 取 FREE_TECH_SLOTS。 */
+/** 标准科技板槽（9 位）：轨道位取 TECH_TRACK_SLOTS 逐列实测，free 取 FREE_TECH_SLOTS。 */
 export function techTileSlot(pos: TechTilePosition): RelPoint {
   switch (pos) {
     case 'terra':
@@ -106,7 +119,7 @@ export function techTileSlot(pos: TechTilePosition): RelPoint {
     case 'gaia':
     case 'eco':
     case 'sci':
-      return { x: TRACK_COLUMN_X[pos] + TECH_SLOT_DX, y: TRACK_TECH_Y };
+      return TECH_TRACK_SLOTS[pos];
     case 'free1':
       return FREE_TECH_SLOTS[0]!;
     case 'free2':
@@ -131,7 +144,7 @@ export const LEVEL_DOT_STAGGER_FRAC = 0.24;
 export const TECH_TILE_WIDTH = 0.13;
 /** 科技板图宽高比（TEC* 扫描图 178×134；槽位按钮按此定高）。 */
 export const TECH_TILE_ASPECT = 178 / 134;
-/** 堆叠：每层向左下偏移步长（相对槽宽 %，顶片满宽居中、下层露出边缘表张数）。 */
+/** 堆叠：每层向右上步进的步长（相对槽宽 %，整叠居中于槽位——底层在左下露边表张数）。 */
 export const TECH_STACK_OFFSET_PCT = 5;
 /** 高级板图宽度（相对图宽）。 */
 export const ADV_TILE_WIDTH = 0.12;
