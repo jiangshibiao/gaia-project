@@ -310,6 +310,42 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(screen.queryByTestId('undo-bar')).toBeNull();
   });
 
+  it('撤销条：新一轮开始（round 前进）后自动隐藏——上轮 pass 后收入阶段不再挂条', () => {
+    const { store } = setupStore();
+    const ws = renderInGame(store);
+    const game = gameFixture();
+    const s2 = filterStateFor(game);
+    s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'pass', booster: 'booster1' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+    });
+    expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
+    // 新一轮（收入结算完成，round 前进）→ 上轮撤销条自动隐藏
+    const s3 = filterStateFor(game);
+    s3.phase = 'action';
+    s3.setupQueue = [];
+    s3.currentPlayerIdx = 0;
+    s3.round = s3.round + 1;
+    act(() => {
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 3, state: s3, legalActions: [] });
+    });
+    expect(screen.queryByTestId('undo-bar')).toBeNull();
+  });
+
+  it('撤销条：轮初决策响应（terrans-gaia-done/盖亚兑换）不触发', () => {
+    const { store } = setupStore();
+    const ws = renderInGame(store);
+    const game = gameFixture();
+    const s2 = filterStateFor(game);
+    s2.pending = { kind: 'terrans-gaia', player: 0 };
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'terrans-gaia-done' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+    });
+    expect(screen.queryByTestId('undo-bar')).toBeNull();
+  });
+
   it('旧底部栏整体移除（无 tab / 合并面板 / 时代标记条）', () => {
     const { store } = setupStore();
     renderInGame(store);

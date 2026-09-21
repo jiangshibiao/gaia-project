@@ -288,26 +288,37 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
 
   // ---- 撤销条可见性与增量 ----
   // 只在我自己的回合有已提交行动时显示：
-  // - 检查点（我行动前快照）以来日志里须有我的回合内行动（被动充能响应不算——
-  //   那是别人回合的应答，"充能不可撤销"，不该因此弹条）。
+  // - 检查点（我行动前快照）以来日志里须有我的回合内行动。**排除项**：
+  //   · 被动充能响应（charge/decline——别人回合的应答，"充能不可撤销"）；
+  //   · 轮初自动流程的决策响应（terrans-gaia-done / itars-gaia-tech /
+  //     choose-tinkering / terrans-gaia-* 盖亚兑换——收入/盖亚阶段的应答，
+  //     不是我的主回合行动）；
   //   **seq 口径**：服务器 action_applied.seq = 行动落库序号（= 行动前快照 seq），
   //   snapshot.seq = 行动后计数；检查点快照 seq=S 时我的首个行动日志 seq=S，
   //   故过滤边界为 >=（> 会把该行动漏掉——曾致撤销条整轮不显示）；
   // - 之后没有其他**真人**座位的回合内行动（有则 server 必拒，显示即误导；
   //   AI 行动不挡——可一并回退）；
+  // - **已进入新一轮（round 前进）则不显示**：上轮 pass 后收入自动结算（无日志），
+  //   撤销条曾在新一轮收入阶段仍挂着（用户反馈"收入阶段不需要完成/撤销"）；
   // - 收起后仅当我又产生新的回合内行动才再弹出。
   const meNow = state.players[seat];
   const meThen = turnCheckpoint?.state.players[seat];
   const aiSeats = new Set(
     (s.room?.seats ?? []).flatMap((info) => (info?.isAI === true ? [info.seat] : [])),
   );
+  const isRoundStartResponse = (a: Action): boolean =>
+    a.type === 'terrans-gaia-done' ||
+    a.type === 'itars-gaia-tech' ||
+    a.type === 'choose-tinkering' ||
+    (a.type === 'free-conversion' && a.conversion.startsWith('terrans-gaia-'));
   const turnLog =
     turnCheckpoint !== null
       ? s.log.filter(
           (e) =>
             e.seq >= turnCheckpoint.seq &&
             e.action.type !== 'charge' &&
-            e.action.type !== 'decline-charge',
+            e.action.type !== 'decline-charge' &&
+            !isRoundStartResponse(e.action),
         )
       : [];
   const lastMyActionSeq = turnLog.reduce<number | null>(
@@ -319,6 +330,7 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     turnCheckpoint !== null &&
     meNow !== undefined &&
     meThen !== undefined &&
+    state.round === turnCheckpoint.state.round && // 新一轮开始后不再显示上轮撤销条
     lastMyActionSeq !== null &&
     !blockedByHuman &&
     (undoDismissedAt === null || lastMyActionSeq > undoDismissedAt);
