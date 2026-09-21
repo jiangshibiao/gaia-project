@@ -397,7 +397,10 @@ select {
   background: #111a2e;
   border-bottom: 1px solid #2a3a5f;
   font-size: min(1.8vh, 0.95vw);
-  overflow: hidden;
+  /* 不能 overflow:hidden——会裁掉兑换下拉菜单；长文本由各自 .topbar-item 省略 */
+  overflow: visible;
+  position: relative;
+  z-index: 30;
   white-space: nowrap;
 }
 
@@ -1419,9 +1422,10 @@ select {
   min-width: 0;
 }
 
-/* 船上金框联邦标记：固定 34px，与计分区联邦标记等大（原按船板图宽比例，各船大小不一） */
+/* 船上金框联邦标记：固定 34px，与计分区联邦标记等大（原按船板图宽比例，各船大小不一；
+   不加黄框——金框已印在图里，CSS 描边是多余的） */
 .tile-img.fed.gold {
-  border-color: var(--accent-warm);
+  border: none;
   width: 34px;
 }
 
@@ -1782,6 +1786,47 @@ select {
   position: absolute;
 }
 
+/* ---- 行动红框高亮（伯明翰式 ~5s 提示） ---- */
+/* 地图 hex 红框（建矿位/触发格） */
+.hex-flash {
+  fill: transparent;
+  stroke: #ff4d4d;
+  stroke-width: 3;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px #ff4d4dcc);
+  animation: flash-pulse 1s ease-in-out infinite;
+}
+/* 版图解锁槽 / 研究轨等级格红框 */
+.mat-flash-slot,
+.rb-flash {
+  aspect-ratio: 1;
+  border: 2.5px solid #ff4d4d;
+  border-radius: 6px;
+  box-shadow: 0 0 10px #ff4d4dcc;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: flash-pulse 1s ease-in-out infinite;
+}
+/* 横条片 / 竖列助推片红框（img/span 通用） */
+.tile-img.flash,
+.tech-stack.flash,
+.side-booster.flash {
+  outline: 2.5px solid #ff4d4d;
+  outline-offset: 1px;
+  border-radius: 4px;
+  box-shadow: 0 0 10px #ff4d4dcc;
+  animation: flash-pulse 1s ease-in-out infinite;
+}
+@keyframes flash-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
 /* LF QIC 覆盖板：精确铺满右下 QIC 盒（盒比≈2.46 vs 板图≈2.6，轻微拉伸贴合） */
 .qic-cover {
   object-fit: fill;
@@ -1821,10 +1866,38 @@ select {
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%);
-  aspect-ratio: 1;
+  /* 圆柱形（实体爬轨 token）：顶面椭圆 + 柱身，宽由 inline -- 高 = 宽 ÷ 0.72 */
+  aspect-ratio: 0.72;
+}
+
+/* 顶面椭圆（亮，带一丝高光） */
+.rb-level .player-dot::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 40%;
   border-radius: 50%;
+  background: var(--pc);
   border: 1px solid #000000aa;
-  box-shadow: 0 0 3px #000;
+  box-shadow: inset 0 1px 2px #ffffff55;
+}
+
+/* 柱身（压暗区分顶面，底部椭圆弧收尾） */
+.rb-level .player-dot::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 20%;
+  bottom: 0;
+  background: var(--pc);
+  filter: brightness(0.72);
+  border: 1px solid #000000aa;
+  border-top: none;
+  border-radius: 0 0 50% 50% / 0 0 25% 25%;
+  box-shadow: 0 2px 3px #00000088;
 }
 
 .rb-level .l5-ring {
@@ -1856,14 +1929,16 @@ select {
   width: 100%;
 }
 
-/* 错落堆叠：每层绝对定位（left/top 内联计算，向右上偏移，整叠居中于槽位） */
-.tech-tile.img .stack-tile {
+/* 错落堆叠：每层绝对定位（left/top 内联计算，下层向左下偏移露边，顶片满位居中于槽位） */
+.tech-tile.img .stack-tile,
+.ship-tech .stack-tile {
   position: absolute;
   box-shadow: 0 0 3px #00000088;
 }
 
 .tech-tile.empty,
-.adv-slot.empty {
+.adv-slot.empty,
+.ship-tech.empty {
   opacity: 0.35;
 }
 
@@ -2124,6 +2199,123 @@ select {
 
 .ship-action-cell .action-token {
   filter: drop-shadow(0 0 4px #000);
+}
+
+/* 片上特殊行动已用盖片：对准片上的行动格八边形图标（刚好盖住）。
+   科技片/高级片（横片）八边形在左中（≈33%,42%，直径 ≈42% 片宽）；
+   助推片（竖片）八边形在顶部（≈50%,20%，直径 ≈59% 片宽）。 */
+.tile-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.tile-wrap .tile-img.used,
+.tech-stack .tile-img.adv-top.used {
+  filter: grayscale(0.85) brightness(0.8);
+}
+
+.tile-used-token {
+  position: absolute;
+  left: 37%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  width: 46%;
+  filter: drop-shadow(0 0 3px #000);
+  pointer-events: none;
+}
+
+/* 高级片（ADV 系列八边形更靠左，≈31%） */
+.tech-stack .tile-used-token {
+  left: 31%;
+}
+
+.side-booster-wrap .tile-used-token {
+  left: 50%;
+  top: 20%;
+  width: 64%;
+}
+
+/* Tinkering 选项按钮内单图（合影裁切） */
+.option-btn .tinkering-tile-img {
+  width: 56px;
+  display: block;
+  margin: 0 auto 2px;
+}
+
+/* 选族悬浮面板预览（右侧固定大图，不挡操作） */
+.draft-hover-pop {
+  position: fixed;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(560px, 44vw);
+  z-index: 60;
+  pointer-events: none;
+  background: #0d1424ee;
+  border: 1px solid var(--border, #2a3a5f);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 8px 24px #000000cc;
+}
+
+.draft-hover-pop img {
+  width: 100%;
+  display: block;
+  border-radius: 6px;
+}
+
+.draft-hover-pop span {
+  display: block;
+  text-align: center;
+  padding: 4px 0 2px;
+  color: var(--ink, #d7e3f8);
+  font-weight: 600;
+}
+
+/* 探索板特殊行动格（八边形热区 + 已用盖片置灰；可点时弱提示边框，同 ship-action-cell 模式） */
+.eb-special-cell {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.eb-special-cell.available {
+  border-color: #58a6ff88;
+  cursor: pointer;
+}
+
+.eb-special-cell.available:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px #58a6ff66;
+}
+
+.eb-special-cell.used {
+  filter: grayscale(0.9);
+}
+
+.eb-special-cell .action-token {
+  width: 96%;
+  filter: drop-shadow(0 0 4px #000);
+}
+
+/* 联邦标记供应区：组建联邦第二步可选中的片（高亮可点） */
+.fed-item.fed-pickable {
+  cursor: pointer;
+  filter: drop-shadow(0 0 6px var(--accent));
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.fed-item.fed-pickable:hover {
+  filter: drop-shadow(0 0 10px var(--accent));
 }
 
 /* 时代标记条已下线（v6：RoundArc / FinalsProgress / BoostersStrip 取代） */

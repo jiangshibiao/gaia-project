@@ -111,11 +111,15 @@ export interface BoardSvgProps {
   state: FilteredState;
   /** 当前选中行动类型的可选 hex（发光描边 + 可点）。 */
   highlights?: ReadonlySet<HexKey> | undefined;
+  /** 行动红框 hex（~5s 的提示性红框，不可点；建矿位/触发格等）。 */
+  flashHexes?: readonly HexKey[] | undefined;
   onHexClick?: ((hex: HexKey) => void) | undefined;
   /** 点击飞船格（非选择态）→ 打开舰队面板。 */
   onShipClick?: ((ship: ShipId) => void) | undefined;
   /** 拖拽吸附预览：在 hex 上半透明显示将放置的建筑（跟随 snapHex 结果）。 */
   snapPreview?: { hex: HexKey; building: BuildingType; player: PlayerIndex } | null | undefined;
+  /** 联邦卫星选择态：已选卫星格（蓝点标记）。 */
+  selectedHexes?: ReadonlySet<HexKey> | undefined;
   /** 拖拽 token 期间关闭 hex tooltip（避免随光标乱弹）。 */
   suppressHover?: boolean | undefined;
 }
@@ -267,7 +271,7 @@ function DeepSpaceLayer({ placements }: { placements: MapPlacements }): ReactEle
   );
 }
 
-export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function BoardSvg({ state, highlights, onHexClick, onShipClick, snapPreview, suppressHover }, ref): ReactElement {
+export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function BoardSvg({ state, highlights, flashHexes, onHexClick, onShipClick, snapPreview, selectedHexes, suppressHover }, ref): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -530,6 +534,19 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
         onDoubleClick={onDoubleClick}
         onClickCapture={onClickCapture}
       >
+        <defs>
+          {/* 建筑棋子白边加粗：alpha 外扩一圈填白垫在棋子下（原素材白边偏细，
+              深空底上看不清整体轮廓）。radius 取 user units（≈棋子边 4%）。 */}
+          <filter id="building-outline" x="-20%" y="-20%" width="140%" height="140%">
+            <feMorphology in="SourceAlpha" operator="dilate" radius="1.2" result="grow" />
+            <feFlood floodColor="#ffffff" result="white" />
+            <feComposite in="white" in2="grow" operator="in" result="outline" />
+            <feMerge>
+              <feMergeNode in="outline" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
         <g className="board-rotate" transform={`rotate(${deg} ${rotCx.toFixed(2)} ${rotCy.toFixed(2)})`}>
           <SectorLayer placements={placements} />
           <DeepSpaceLayer placements={placements} />
@@ -589,12 +606,13 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                     className="hex-building"
                     data-building={hex.building.type}
                     data-player={hex.building.player}
+                    filter="url(#building-outline)"
                   >
                     <BuildingImage state={state} type={hex.building.type} player={hex.building.player} />
                   </g>
                 ) : null}
                 {hex.additionalMine !== undefined ? (
-                  <g className="hex-additional-mine" data-player={hex.additionalMine}>
+                  <g className="hex-additional-mine" data-player={hex.additionalMine} filter="url(#building-outline)">
                     {/* 附加矿（Lantids 在对手星球上的矿）：移到角落与主建筑错开 */}
                     <image
                       href={buildingImageTrimmed('mine', FACTIONS[state.players[hex.additionalMine]?.faction ?? 'terrans'].color)}
@@ -615,8 +633,8 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                     className="hex-satellite"
                     data-player={hex.satelliteOf}
                     cx={0}
-                    cy={-HEX_SIZE * 0.82}
-                    r={HEX_SIZE * 0.14}
+                    cy={0}
+                    r={HEX_SIZE * 0.18}
                     fill={playerColor(state, hex.satelliteOf)}
                     stroke="#101418"
                     strokeWidth={1}
@@ -626,6 +644,7 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                   <g
                     className={`hex-gaiaformer${hex.gaiaformerOf === undefined ? ' in-progress' : ''}`}
                     data-player={hex.gaiaformerOf ?? projectOwner}
+                    filter="url(#building-outline)"
                   >
                     <image
                       href={buildingImageTrimmed('gf', FACTIONS[state.players[hex.gaiaformerOf ?? projectOwner ?? 0]?.faction ?? 'terrans'].color)}
@@ -676,6 +695,21 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                 {highlighted ? (
                   <polygon className="hex-highlight" points={hexPoints(0, 0, HEX_SIZE - 1)} />
                 ) : null}
+                {flashHexes?.includes(key) === true ? (
+                  <polygon className="hex-flash" data-testid={`hex-flash-${key}`} points={hexPoints(0, 0, HEX_SIZE - 1)} />
+                ) : null}
+                {selectedHexes?.has(key) === true ? (
+                  <circle
+                    className="hex-sat-pick"
+                    data-testid={`hex-sat-pick-${key}`}
+                    cx={0}
+                    cy={0}
+                    r={HEX_SIZE * 0.18}
+                    fill="#7ecfff"
+                    stroke="#0f2f4a"
+                    strokeWidth={1.2}
+                  />
+                ) : null}
                 <polygon
                   className={`hex-hit${highlighted ? ' clickable' : ''}`}
                   points={hexPoints(0, 0, HEX_SIZE - 1)}
@@ -706,7 +740,9 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                 pointerEvents="none"
               >
                 <polygon className="hex-highlight snap" points={hexPoints(0, 0, HEX_SIZE - 1)} />
-                <BuildingImage state={state} type={snapPreview.building} player={snapPreview.player} />
+                <g filter="url(#building-outline)">
+                  <BuildingImage state={state} type={snapPreview.building} player={snapPreview.player} />
+                </g>
               </g>
             );
           })() : null}

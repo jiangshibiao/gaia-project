@@ -49,6 +49,8 @@ export interface FactionBoardCalibration {
   ac2Slot: RelPoint;
   /** gaiaformer 槽×3。 */
   gaiaformerSlots: readonly RelPoint[];
+  /** 格伦星人专属联邦片叠放位置（族板印有联邦徽章处，PI 格右侧大格；仅 gleens）。 */
+  gleensFedSlot?: RelPoint;
 }
 
 /** 基础族扫描图宽高比（1753×1117）。 */
@@ -132,6 +134,9 @@ function buildCalibrations(): Record<FactionId, FactionBoardCalibration> {
     out[f] = { image: factionBoardImage(f), ...TEMPLATE };
   }
   out.bescods = { image: factionBoardImage('bescods'), ...TEMPLATE, ...BESCODS };
+  // 格伦星人：专属联邦片放在族板印有联邦徽章的位置（PI 格右侧大格，实测徽章中心
+  // (500,593)/1753×1117），不再叠压 PI 棋子（要塞与其他族同位显示）。
+  out.gleens = { image: factionBoardImage('gleens'), ...TEMPLATE, gleensFedSlot: { x: 0.285, y: 0.531 } };
   out.tinkeroids = { image: factionBoardImage('tinkeroids'), ...TEMPLATE, aspect: LF_RENDER_ASPECT };
   for (const f of ['space-giants', 'darkanians'] as const) {
     out[f] = { image: factionBoardImage(f), ...LF_PHOTO };

@@ -87,6 +87,14 @@ describe('faction-calibration 结构', () => {
     expect(b.piSlot.x).toBeGreaterThan(0.4);
   });
 
+  it('gleens：专属联邦片槽在 PI 右侧徽章位（不遮挡 PI 棋子）；其他族无此槽', () => {
+    const g = factionCalibration('gleens');
+    expect(g.gleensFedSlot).toBeDefined();
+    expect01(g.gleensFedSlot!, 'gleens.fed');
+    expect(g.gleensFedSlot!.x).toBeGreaterThan(g.piSlot.x);
+    expect(factionCalibration('terrans').gleensFedSlot).toBeUndefined();
+  });
+
   it('darkanians/space-giants：LF 正面照标定坐标合法且保留槽位顺序', () => {
     for (const f of ['darkanians', 'space-giants'] as const) {
       const cal = factionCalibration(f);

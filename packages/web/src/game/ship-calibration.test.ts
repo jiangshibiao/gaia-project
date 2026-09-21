@@ -65,12 +65,12 @@ describe('ship-calibration 结构', () => {
       expect.closeTo(0.633, 2),
       expect.closeTo(0.82, 2),
     ]);
-    // 3 个六边形行动格：中上部左→右（绿/粉/黄）
-    expect(cal.actionSpaces[0]).toEqual({ x: expect.closeTo(0.3725, 2), y: expect.closeTo(0.398, 2) });
-    expect(cal.actionSpaces[1]).toEqual({ x: expect.closeTo(0.4875, 2), y: expect.closeTo(0.39, 2) });
-    expect(cal.actionSpaces[2]).toEqual({ x: expect.closeTo(0.605, 2), y: expect.closeTo(0.382, 2) });
+    // 3 个六边形行动格：中上部左→右（绿/粉/黄）；2026-09-21 PIL 重测中心
+    expect(cal.actionSpaces[0]).toEqual({ x: expect.closeTo(0.372, 2), y: expect.closeTo(0.3771, 2) });
+    expect(cal.actionSpaces[1]).toEqual({ x: expect.closeTo(0.4883, 2), y: expect.closeTo(0.3838, 2) });
+    expect(cal.actionSpaces[2]).toEqual({ x: expect.closeTo(0.6041, 2), y: expect.closeTo(0.381, 2) });
     // 科技板槽在右侧屏幕面板，联邦标记槽盖在中下印刷的徽章上
-    expect(cal.techSlot).toEqual({ x: expect.closeTo(0.84, 2), y: expect.closeTo(0.454, 2) });
+    expect(cal.techSlot).toEqual({ x: expect.closeTo(0.82, 2), y: expect.closeTo(0.454, 2) });
     expect(cal.fedToken).toEqual({ x: expect.closeTo(0.685, 2), y: expect.closeTo(0.755, 2) });
   });
 });

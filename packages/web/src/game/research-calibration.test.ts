@@ -13,7 +13,6 @@ import {
   POWER_ACTION_SLOTS,
   QIC_ACTION_SLOTS,
   TECH_STACK_OFFSET_PCT,
-  TECH_STACK_WIDTH_PCT,
   TECH_TILE_ASPECT,
   TRACK_COLUMN_X,
   TRACK_LEVEL_Y,
@@ -53,13 +52,11 @@ describe('research-calibration 结构', () => {
     expect01(ADV_TECH_Y, 'adv y');
   });
 
-  it('错落堆叠常量合法：单张缩小、偏移步长适中、宽高比 > 1', () => {
+  it('堆叠常量合法：顶片满宽、偏移步长适中（4 层左下偏移不越界）、宽高比 > 1', () => {
     expect(TECH_TILE_ASPECT).toBeGreaterThan(1);
-    expect(TECH_STACK_WIDTH_PCT).toBeGreaterThan(50);
-    expect(TECH_STACK_WIDTH_PCT).toBeLessThan(100);
     expect(TECH_STACK_OFFSET_PCT).toBeGreaterThan(0);
-    // 4 层整叠不超出槽宽太多：缩小宽 + 3 层偏移 ≤ 1.5 倍槽宽
-    expect(TECH_STACK_WIDTH_PCT + 3 * TECH_STACK_OFFSET_PCT).toBeLessThanOrEqual(150);
+    // 4 层堆叠：3 层偏移 ≤ 槽宽 1/3（顶片满宽居中，下层仅露边缘）
+    expect(3 * TECH_STACK_OFFSET_PCT).toBeLessThanOrEqual(34);
   });
 
   it('7 power + 3 qic 行动格坐标均在 0..1 且左→右递增', () => {

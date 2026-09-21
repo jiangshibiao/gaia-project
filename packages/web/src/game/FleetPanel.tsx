@@ -19,15 +19,15 @@
  */
 import type { CSSProperties, MouseEvent, ReactElement } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { SHIP_ACTION_SPACES, SHIP_TECH_SLOT_SHIPS } from '@gaia/engine';
-import type { Action, PlayerIndex, ShipActionId, ShipId, ShipState } from '@gaia/engine';
+import { SHIP_ACTION_SPACES, SHIP_TECH_SLOT_SHIPS, FACTIONS } from '@gaia/engine';
+import type { Action, FederationTokenId, PlayerIndex, ShipActionId, ShipId, ShipState } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
 import {
+  ACTION_TOKEN_IMAGE,
   SHIP_BOARD_IMAGE,
-  SHUTTLE_IMAGE,
   artifactImage,
   federationTokenImage,
-  markerImage,
+  shuttleImage,
   techTileImage,
 } from '../assets';
 import { artifactName, factionName, federationTokenName, playerColor, shipActionLabel, shipName, techTileName } from './display';
@@ -40,6 +40,10 @@ export interface FleetPanelProps {
   legalActions: Action[];
   onShipAction: (ship: ShipId, action: ShipActionId) => void;
   onExplore: (ship: ShipId) => void;
+  /** 联邦标记选择态（组建联邦第二步）：可拿的标记 id 集合（命中的船上金框片可点）。 */
+  fedTokenOptions?: ReadonlySet<string> | null | undefined;
+  /** 点击船上金框联邦片 → 选为联邦标记。 */
+  onFedTokenPick?: ((token: FederationTokenId) => void) | undefined;
 }
 
 /** 相对坐标 → 居中定位 style（left/top % + translate）。 */
@@ -60,6 +64,8 @@ function ShipOverlays({
   interactive,
   canShipAction,
   onShipAction,
+  fedTokenOptions,
+  onFedTokenPick,
 }: {
   ship: ShipState;
   state: FilteredState;
@@ -69,6 +75,8 @@ function ShipOverlays({
   interactive: boolean;
   canShipAction?: ((ship: ShipId, action: ShipActionId) => boolean) | undefined;
   onShipAction?: ((ship: ShipId, action: ShipActionId) => void) | undefined;
+  fedTokenOptions?: ReadonlySet<string> | null | undefined;
+  onFedTokenPick?: ((token: FederationTokenId) => void) | undefined;
 }): ReactElement {
   const actions = SHIP_ACTION_SPACES[ship.id];
   const myShuttle = ship.shuttleSlots.includes(seat);
@@ -85,7 +93,12 @@ function ShipOverlays({
         >
           {occupant !== null ? (
             <>
-              <img className="slot-shuttle" src={SHUTTLE_IMAGE} alt="" aria-hidden="true" />
+              <img
+                className="slot-shuttle"
+                src={shuttleImage(FACTIONS[state.players[occupant]?.faction ?? 'terrans'].color)}
+                alt=""
+                aria-hidden="true"
+              />
               <span
                 className="slot-owner"
                 data-player={occupant}
@@ -99,33 +112,58 @@ function ShipOverlays({
         </div>
       ))}
 
-      {/* 科技板槽（Twilight 无槽） */}
+      {/* 科技板槽（Twilight 无槽）：船上标准板为人数块（剩余 = 人数 − 已 claim 人数），
+          错落堆叠同研究板（顶片满位，下层向左下露边表张数） */}
       {SHIP_TECH_SLOT_SHIPS.includes(ship.id) && cal.techSlot !== null ? (
-        <div
-          className="ship-tech overlay"
-          style={{ ...at(cal.techSlot), width: `${cal.techWidth * 100}%` }}
-          title="船上科技板槽"
-        >
-          {ship.techTiles.length > 0 ? (
-            ship.techTiles.map((t) => (
-              <img key={t} className="tile-img" src={techTileImage(t)} alt={techTileName(t)} title={techTileName(t)} />
-            ))
-          ) : (
-            <span className="hint">已拿完</span>
-          )}
-        </div>
+        (() => {
+          const tile = ship.techTiles[0];
+          const remaining = tile !== undefined ? Math.max(0, state.config.playerCount - ship.techTileClaims.length) : 0;
+          return (
+            <div
+              className={`ship-tech overlay${remaining === 0 ? ' empty' : ''}`}
+              style={{ ...at(cal.techSlot), width: `${cal.techWidth * 100}%` }}
+              title={`船上科技板槽（剩 ${remaining}）`}
+              data-testid={`ship-tech-${ship.id}`}
+            >
+              {tile !== undefined && remaining > 0 ? (
+                Array.from({ length: remaining }, (_, i) => (
+                  <img
+                    key={i}
+                    className="tile-img stack-tile"
+                    style={{
+                      width: '100%',
+                      position: 'absolute',
+                      left: `${-(remaining - 1 - i) * 5}%`,
+                      top: `${(remaining - 1 - i) * 5}%`,
+                    }}
+                    src={techTileImage(tile)}
+                    alt={techTileName(tile)}
+                    title={techTileName(tile)}
+                  />
+                ))
+              ) : (
+                <span className="hint">已拿完</span>
+              )}
+            </div>
+          );
+        })()
       ) : null}
 
       {/* 金框联邦标记槽（固定 34px，与右侧联邦标记等大；不再按图宽比例） */}
-      {ship.federationToken !== null ? (
-        <img
-          className="tile-img fed gold overlay"
-          style={at(cal.fedToken)}
-          src={federationTokenImage(ship.federationToken)}
-          alt={federationTokenName(ship.federationToken)}
-          title={`金框联邦标记：${federationTokenName(ship.federationToken)}`}
-        />
-      ) : null}
+      {ship.federationToken !== null ? (() => {
+        const canFedPick = fedTokenOptions?.has(ship.federationToken) === true && onFedTokenPick !== undefined;
+        return (
+          <img
+            className={`tile-img fed gold overlay${canFedPick ? ' fed-pickable' : ''}`}
+            style={at(cal.fedToken)}
+            src={federationTokenImage(ship.federationToken)}
+            alt={federationTokenName(ship.federationToken)}
+            title={`金框联邦标记：${federationTokenName(ship.federationToken)}${canFedPick ? '（点击选为联邦标记）' : ''}`}
+            data-testid={`ship-fed-${ship.id}`}
+            onClick={canFedPick ? () => onFedTokenPick(ship.federationToken as FederationTokenId) : undefined}
+          />
+        );
+      })() : null}
 
       {/* Twilight artifacts（4 个神器位） */}
       {cal.artifacts !== null
@@ -169,7 +207,7 @@ function ShipOverlays({
             {used ? (
               <img
                 className="action-token"
-                src={markerImage('ActionToken')}
+                src={ACTION_TOKEN_IMAGE}
                 alt="已用"
                 style={{ width: `${(cal.actionTokenSize / cal.actionSize) * 100}%` }}
               />

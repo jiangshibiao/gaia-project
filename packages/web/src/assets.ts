@@ -179,6 +179,9 @@ export function markerImage(name: string): string {
   return `${A}/markers/${name}.png`;
 }
 
+/** 行动格已用盖片（trim 版：裁过透明边距，渲染 width = 内容直径，见 ship/research-calibration）。 */
+export const ACTION_TOKEN_IMAGE = `${A}/markers/trim/ActionToken.png`;
+
 /** 种族飞船面板（LF 探索板整图，用户自拍抠图素材，factions/panels/<id>.png）。 */
 export function factionPanelImage(factionId: FactionId): string {
   return `${A}/factions/panels/${factionId}.png`;
@@ -351,7 +354,16 @@ export function artifactImage(id: ArtifactId): string {
   return `${A}/lf/artifacts/artifact_${id.replace('art-', '')}.png`;
 }
 
+/** Tinkering 板块单图（官方合影裁切抠底，lf/misc/tinkering/tinkN.png）。 */
+export function tinkeringTileImage(id: string): string {
+  return `${A}/lf/misc/tinkering/${id}.png`;
+}
+
 export const SHUTTLE_IMAGE = `${A}/lf/misc/shuttle.png`;
+/** 按族色预染的穿梭机图（PIL 亮度映射生成，lf/misc/shuttle/<color>.png，共 9 色）。 */
+export function shuttleImage(color: string): string {
+  return `${A}/lf/misc/shuttle/${color}.png`;
+}
 export const POWER_RING_IMAGE = `${A}/lf/misc/powerring.png`;
 
 /** LF 经济轨 L3/L4 覆盖板（pw/vp 双面）。 */

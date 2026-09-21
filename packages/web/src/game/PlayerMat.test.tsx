@@ -217,7 +217,9 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
     const kinds = Array.from(strip.querySelector('.strip-tech')!.children).map(
       (el) => el.getAttribute('data-testid') ?? el.className,
     );
-    expect(kinds[0]).toContain('tile-img');
+    // 首项为 tech1（tile-wrap 包裹 tile-img；特殊行动已用时同容器附盖片）
+    expect(kinds[0]).toContain('tile-wrap');
+    expect(strip.querySelector('.strip-tech')!.children[0]!.querySelector('img.tile-img')).not.toBeNull();
     expect(strip.querySelectorAll('img[data-testid^="strip-fed-0-"]')).toHaveLength(3);
     // 翻转标记保留灰面样式
     expect(container.querySelector('.tile-img.fed.flipped')).not.toBeNull();

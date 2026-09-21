@@ -13,6 +13,7 @@ import type { BuildingSupply, PlayerIndex } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
 import { playerColor } from './display';
 import { PanelBoosterStack } from './ExplorationBoard';
+import type { ActionFlash } from './actionFlash';
 import { PlayerMat, TechBoosterStrip } from './PlayerMat';
 
 export interface LeftRailProps {
@@ -31,9 +32,11 @@ export interface LeftRailProps {
   onSpecialAction?: (() => void) | undefined;
   /** 复盘第一视角切换（仅复盘传入；渲染在我的版图详情按钮前）。 */
   onCycleViewSeat?: (() => void) | undefined;
+  /** 行动红框（按玩家路由到对应版图/横条/竖列）。 */
+  flash?: ActionFlash | null | undefined;
 }
 
-export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowDetail, onBuildingDragStart, specialAvailable, onSpecialAction, onCycleViewSeat }: LeftRailProps): ReactElement {
+export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowDetail, onBuildingDragStart, specialAvailable, onSpecialAction, onCycleViewSeat, flash }: LeftRailProps): ReactElement {
   const opponents = state.players.map((_, i) => i).filter((i) => i !== seat);
   // null = 未手动选择 → 默认第一个对手；座位数/座位变化导致选中失效时同样回退
   const [oppTab, setOppTab] = useState<PlayerIndex | null>(null);
@@ -56,11 +59,12 @@ export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowD
             onBuildingDragStart={actor === seat ? onBuildingDragStart : undefined}
             specialAvailable={specialAvailable}
             onSpecialAction={actor === seat ? onSpecialAction : undefined}
+            flashSlot={flash?.matSlot?.player === seat ? flash.matSlot : null}
           />
-          <PanelBoosterStack state={state} seat={seat} />
+          <PanelBoosterStack state={state} seat={seat} flashBooster={flash?.boosterPlayer === seat} specialAvailable={specialAvailable} onSpecialAction={actor === seat ? onSpecialAction : undefined} />
         </div>
         <div className="rail-mine-bottom">
-          <TechBoosterStrip state={state} playerIdx={seat} />
+          <TechBoosterStrip state={state} playerIdx={seat} flashTileIds={flash?.tilesPlayer === seat ? flash.tileIds : []} />
         </div>
       </div>
 
@@ -94,11 +98,12 @@ export function LeftRail({ state, seat, nicknames, actor, thinkingSeats, onShowD
               thinking={thinkingSeats.includes(selected)}
               active={actor === selected}
               onShowDetail={onShowDetail}
+              flashSlot={flash?.matSlot?.player === selected ? flash.matSlot : null}
             />
-            <PanelBoosterStack state={state} seat={selected} />
+            <PanelBoosterStack state={state} seat={selected} flashBooster={flash?.boosterPlayer === selected} />
           </div>
           <div className="rail-mine-bottom">
-            <TechBoosterStrip state={state} playerIdx={selected} />
+            <TechBoosterStrip state={state} playerIdx={selected} flashTileIds={flash?.tilesPlayer === selected ? flash.tileIds : []} />
           </div>
         </div>
       ) : null}

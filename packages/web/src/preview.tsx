@@ -14,6 +14,7 @@ import type { Action, FactionId } from '@gaia/engine';
 import { actorOf, filterStateFor } from '@gaia/protocol';
 import { BoardSvg } from './board/BoardSvg';
 import { BoostersStrip } from './game/BoostersStrip';
+import { ExplorationBoard } from './game/ExplorationBoard';
 import { FleetPanel } from './game/FleetPanel';
 import { GameScreen } from './game/GameScreen';
 import { PlayerMat } from './game/PlayerMat';
@@ -82,6 +83,7 @@ const MAT_FACTIONS: readonly FactionId[] = [
   'moweyds',
   'ambas',
   'itars',
+  'gleens',
 ];
 
 const matStates = MAT_FACTIONS.map((f, i) => {
@@ -94,15 +96,28 @@ const matStates = MAT_FACTIONS.map((f, i) => {
   p.buildings.lab = 3 - (i % 2);
   if (i % 3 === 0) p.buildings.pi = 0;
   if (i % 4 === 0) p.buildings.ac1 = 0;
+  // terrans：tech9 特殊行动已用盖片目视验证（片上盖 token 置灰）
+  if (i === 0) {
+    p.techTiles = ['tech9'];
+    p.specialUsed = ['tech9'];
+    p.acquisitions = [{ kind: 'tech', id: 'tech9' }];
+  }
+  // gleens：面板特殊行动格盖片目视验证（本轮已用 → 盖 action token 置灰）
+  if (f === 'gleens') p.specialUsed = ['gleens-range'];
   p.power = { ...p.power, bowl1: 2 + (i % 3), bowl2: 3 + (i % 4), bowl3: i % 5, gaia: i % 3 };
   if (i % 2 === 0) p.gaiaformers = { total: 3, available: 2, lost: 0, inGaia: i % 4 === 0 ? 1 : 0 };
   p.vp = 10 + i * 3;
   // 联邦标记单行自适应验证：各家枚数不同（含翻灰面）
-  const FED_COUNTS = [5, 2, 3, 1, 6, 4, 2, 3, 1, 5] as const;
+  const FED_COUNTS = [5, 2, 3, 1, 6, 4, 2, 3, 1, 5, 2] as const;
   const FED_IDS = ['fed1', 'fed2', 'fed3', 'fed4', 'fed5', 'fed6'] as const;
   p.federationTokens = FED_IDS.slice(0, FED_COUNTS[i]!).map((id, j) => ({ id, flipped: j % 2 === 1 }));
   return s;
 });
+
+/** gleens 面板特殊行动格"未用"对照态（热区可点）。 */
+const gleensUnusedState = filterStateFor(
+  newGame({ playerCount: 1, seed: 17, factions: ['gleens'], lostFleet: true }),
+);
 
 /**
  * 假 GameStore（preview 拖拽实测）：本地引擎对局，seat 0 为人类；
@@ -125,10 +140,12 @@ class PreviewStore {
     // 快进到主阶段 seat 0 首个回合（setup 全部自动行动），
     // 使建矿/升级拖拽与行动格直点都能在 preview 实测
     this.autoPlay(() => this.game.phase !== 'setup' && actorOf(this.game) === 0);
-    // 塞科技片/高级片/联邦片/助推器，验证左栏横条有内容时的布局
+    // 塞科技片/高级片/联邦片/助推器，验证左栏横条有内容时的布局；
+    // tech9 特殊行动已用 → 片上盖片位置目视验证
     {
       const p = this.game.players[0]!;
-      p.techTiles = ['tech2', 'tech5'];
+      p.techTiles = ['tech9', 'tech2', 'tech5'];
+      p.specialUsed = ['tech9'];
       p.advTechTiles = [{ id: 'advtech3', covers: 'tech5' }];
       p.booster = 'booster4';
       p.federationTokens = [
@@ -137,6 +154,7 @@ class PreviewStore {
         { id: 'fed3', flipped: true },
       ];
       p.acquisitions = [
+        { kind: 'tech', id: 'tech9' },
         { kind: 'tech', id: 'tech2' },
         { kind: 'fed', id: 'fed1' },
         { kind: 'adv', id: 'advtech3' },
@@ -239,6 +257,15 @@ function App() {
       <h2>玩家详情弹窗（detailed 变体：科技板块/推进片两区）</h2>
       <div style={{ maxWidth: 640 }}>
         <PlayerMat state={state} playerIdx={0} nickname="玩家1" detailed />
+      </div>
+      <h2>飞船面板特殊行动格（gleens：左 = 本轮已用盖片置灰；右 = 自己回合热区可点）</h2>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        <div style={{ width: 130 }}>
+          <ExplorationBoard state={matStates[MAT_FACTIONS.indexOf('gleens')]!} seat={0} />
+        </div>
+        <div style={{ width: 130 }}>
+          <ExplorationBoard state={gleensUnusedState} seat={0} specialAvailable onSpecialAction={() => {}} />
+        </div>
       </div>
       <h2>v6 各栏组件（研究轨道 / 舰队 2×2 / 回合弧 / 终局进度 / 助推器池）</h2>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>

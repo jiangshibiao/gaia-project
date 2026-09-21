@@ -15,9 +15,10 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { FACTIONS } from '@gaia/engine';
-import type { BuildingSupply, FactionId, PlayerIndex, PlayerState, ResearchTrack } from '@gaia/engine';
+import type { BuildingSupply, BuildingType, FactionId, PlayerIndex, PlayerState, ResearchTrack } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
 import {
+  ACTION_TOKEN_IMAGE,
   BUILDING_COLOR_FILTER,
   advTechTileImage,
   artifactImage,
@@ -104,6 +105,8 @@ export interface PlayerMatProps {
   onShowDetail?: ((player: PlayerIndex) => void) | undefined;
   /** 复盘第一视角切换（仅复盘传入；渲染在详情按钮前，点击轮换视角座位）。 */
   onCycleViewSeat?: (() => void) | undefined;
+  /** 行动红框：刚解锁的建筑槽位（建造/升级后 ~5s 提示）。 */
+  flashSlot?: { building: BuildingType; slotIndex: number } | null | undefined;
   /** 收入轨建筑拖拽源（仅自己的面板且轮到自己时传入；pointerdown 发起拖拽）。 */
   onBuildingDragStart?: ((b: keyof BuildingSupply, e: React.PointerEvent<HTMLImageElement>) => void) | undefined;
   /** 星际要塞特殊行动可用（自己回合且 legalActions 含 special-action）。 */
@@ -112,7 +115,7 @@ export interface PlayerMatProps {
   onSpecialAction?: (() => void) | undefined;
 }
 
-export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, detailed, onShowDetail, onCycleViewSeat, onBuildingDragStart, specialAvailable, onSpecialAction }: PlayerMatProps): ReactElement | null {
+export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, detailed, onShowDetail, onCycleViewSeat, flashSlot, onBuildingDragStart, specialAvailable, onSpecialAction }: PlayerMatProps): ReactElement | null {
   const p = state.players[playerIdx];
   const [imgBroken, setImgBroken] = useState(false);
   if (p === undefined) return null;
@@ -182,7 +185,7 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
       {legacy ? (
         <LegacyBoard p={p} playerIdx={playerIdx} color={def.color} />
       ) : (
-        <FactionBoard p={p} playerIdx={playerIdx} faction={p.faction} color={def.color} onImgError={() => setImgBroken(true)} gleensTokenAvailable={p.faction === 'gleens' && (state.board.federationTokens['gleens'] ?? 0) > 0} onBuildingDragStart={onBuildingDragStart} specialAvailable={specialAvailable} onSpecialAction={onSpecialAction} />
+        <FactionBoard p={p} playerIdx={playerIdx} faction={p.faction} color={def.color} onImgError={() => setImgBroken(true)} gleensTokenAvailable={p.faction === 'gleens' && (state.board.federationTokens['gleens'] ?? 0) > 0} flashSlot={flashSlot} onBuildingDragStart={onBuildingDragStart} specialAvailable={specialAvailable} onSpecialAction={onSpecialAction} />
       )}
 
       <div className="mat-resources" data-testid={`resources-${playerIdx}`}>
@@ -234,12 +237,14 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
  * 左栏版图下方展示，与详情弹窗共享覆盖/叠放逻辑；推进片已迁出版图右侧竖列
  * （PanelBoosterStack：种族飞船面板 + 当回合助推片）。三者皆空时不渲染。
  */
-export function TechBoosterStrip({ state, playerIdx }: { state: FilteredState; playerIdx: PlayerIndex }): ReactElement | null {
+export function TechBoosterStrip({ state, playerIdx, flashTileIds = [] }: { state: FilteredState; playerIdx: PlayerIndex; flashTileIds?: readonly string[] | undefined }): ReactElement | null {
   const p = state.players[playerIdx];
   if (p === undefined) return null;
   const covered = new Set(p.advTechTiles.map((t) => t.covers));
   const uncoveredTech = p.techTiles.filter((t) => !covered.has(t));
   if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.federationTokens.length === 0) return null;
+  /** 片上特殊行动本轮已用 → 盖 action token（tech9 充能 / advtech3/11/13 资源格）。 */
+  const specialUsedSet = new Set<string>(p.specialUsed);
   /** 按获得时间混排（acquisitions 为空/缺失时回退：科技→高级→联邦的分组序）。 */
   const acqs = p.acquisitions ?? [];
   const items =
@@ -255,24 +260,39 @@ export function TechBoosterStrip({ state, playerIdx }: { state: FilteredState; p
     <div className="tech-booster-strip" data-testid={`tech-booster-strip-${playerIdx}`}>
       <div className="strip-tech">
         {items.map((item, i) => {
+          const flashing = flashTileIds.includes(item.id);
           if (item.kind === 'tech') {
+            const used = item.id === 'tech9' && specialUsedSet.has('tech9');
             return (
-              <img
-                key={`tech-${item.id}-${i}`}
-                className="tile-img"
-                src={techTileImage(item.id as Parameters<typeof techTileImage>[0])}
-                alt={techTileName(item.id as Parameters<typeof techTileName>[0])}
-                title={techTileName(item.id as Parameters<typeof techTileName>[0])}
-              />
+              <span key={`tech-${item.id}-${i}`} className="tile-wrap">
+                <img
+                  className={`tile-img${flashing ? ' flash' : ''}${used ? ' used' : ''}`}
+                  data-testid={flashing ? `strip-flash-${playerIdx}` : undefined}
+                  src={techTileImage(item.id as Parameters<typeof techTileImage>[0])}
+                  alt={techTileName(item.id as Parameters<typeof techTileName>[0])}
+                  title={techTileName(item.id as Parameters<typeof techTileName>[0])}
+                />
+                {used ? (
+                  <img
+                    className="action-token tile-used-token"
+                    data-testid={`tile-used-tech9-${playerIdx}`}
+                    src={ACTION_TOKEN_IMAGE}
+                    alt="已用"
+                    title="充能 4 魔力：本轮已用"
+                  />
+                ) : null}
+              </span>
             );
           }
           if (item.kind === 'adv') {
             const adv = p.advTechTiles.find((t) => t.id === item.id);
             if (adv === undefined) return null;
+            const used = specialUsedSet.has(adv.id);
             return (
               <span
                 key={`adv-${item.id}-${i}`}
-                className="tech-stack"
+                className={`tech-stack${flashing ? ' flash' : ''}`}
+                data-testid={flashing ? `strip-flash-${playerIdx}` : undefined}
                 title={`${advTechTileName(adv.id)}（覆盖 ${techTileName(adv.covers)}）`}
               >
                 <img
@@ -281,7 +301,16 @@ export function TechBoosterStrip({ state, playerIdx }: { state: FilteredState; p
                   alt={techTileName(adv.covers)}
                   title={`${techTileName(adv.covers)}（被覆盖）`}
                 />
-                <img className="tile-img adv-top" src={advTechTileImage(adv.id)} alt={advTechTileName(adv.id)} />
+                <img className={`tile-img adv-top${used ? ' used' : ''}`} src={advTechTileImage(adv.id)} alt={advTechTileName(adv.id)} />
+                {used ? (
+                  <img
+                    className="action-token tile-used-token"
+                    data-testid={`tile-used-${adv.id}-${playerIdx}`}
+                    src={ACTION_TOKEN_IMAGE}
+                    alt="已用"
+                    title="特殊行动：本轮已用"
+                  />
+                ) : null}
               </span>
             );
           }
@@ -289,7 +318,7 @@ export function TechBoosterStrip({ state, playerIdx }: { state: FilteredState; p
           return (
             <img
               key={`fed-${item.id}-${i}`}
-              className={`tile-img fed${f?.flipped === true ? ' flipped' : ''}`}
+              className={`tile-img fed${f?.flipped === true ? ' flipped' : ''}${flashing ? ' flash' : ''}`}
               data-testid={`strip-fed-${playerIdx}-${i}`}
               src={federationTokenImage(item.id as Parameters<typeof federationTokenImage>[0])}
               alt={federationTokenName(item.id as Parameters<typeof federationTokenName>[0])}
@@ -310,6 +339,7 @@ function FactionBoard({
   color,
   onImgError,
   gleensTokenAvailable,
+  flashSlot,
   onBuildingDragStart,
   specialAvailable,
   onSpecialAction,
@@ -321,6 +351,8 @@ function FactionBoard({
   onImgError: () => void;
   /** 格伦星人专属联邦片仍在供应（未解锁）时 true：叠放在 PI 槽位上。 */
   gleensTokenAvailable?: boolean | undefined;
+  /** 行动红框：刚解锁的建筑槽位（建造/升级后 ~5s 提示）。 */
+  flashSlot?: { building: BuildingType; slotIndex: number } | null | undefined;
   onBuildingDragStart?: ((b: keyof BuildingSupply, e: React.PointerEvent<HTMLImageElement>) => void) | undefined;
   /** 自己回合且特殊行动合法时为 true（PI 热区高亮可点）。 */
   specialAvailable?: boolean | undefined;
@@ -435,11 +467,12 @@ function FactionBoard({
         ));
       })}
 
-      {/* 格伦星人专属联邦片：放在 PI 槽位上（PI 建成时获得；实体版即印于格伦星人族板） */}
+      {/* 格伦星人专属联邦片：放在族板印有联邦徽章的位置（PI 格右侧大格），不遮挡
+          PI 棋子（要塞与其他族同位显示）；PI 建成时获得（算组建一次联邦） */}
       {gleensTokenAvailable === true ? (
         <img
           className="mat-gleens-fed overlay"
-          style={{ ...at(cal.piSlot), width: `${(BUILDING_SPRITE.pi.width * 0.9 * 100).toFixed(2)}%` }}
+          style={{ ...at(cal.gleensFedSlot ?? cal.piSlot), width: '7.5%' }}
           src={federationTokenImage('gleens')}
           alt="格伦星人专属联邦片"
           title="格伦星人专属联邦片：PI 建成时获得"
@@ -460,6 +493,39 @@ function FactionBoard({
           onClick={() => onSpecialAction()}
         />
       ) : null}
+
+      {/* QIC 学院（ac2）特殊行动格：本轮已用 → 在原槽位盖 action token */}
+      {p.buildings.ac2 === 0 && p.specialUsed.includes('ac2') ? (
+        <img
+          className="mat-used-token overlay"
+          style={{ ...at(cal.ac2Slot), width: `${(BUILDING_SPRITE.academy.width * 0.85 * 100).toFixed(2)}%` }}
+          src={ACTION_TOKEN_IMAGE}
+          alt="已用"
+          title="QIC 学院 +1q：本轮已用"
+          data-testid={`mat-used-ac2-${playerIdx}`}
+        />
+      ) : null}
+
+      {/* 行动红框：刚解锁的建筑槽位（建造/升级后 ~5s 提示） */}
+      {flashSlot !== null && flashSlot !== undefined
+        ? (() => {
+            const slots = slotsOf(flashSlot.building as keyof BuildingSupply);
+            const slot = slots[flashSlot.slotIndex];
+            const sprite = BUILDING_SPRITE_OF[flashSlot.building as keyof BuildingSupply];
+            if (slot === undefined) return null;
+            return (
+              <span
+                className="mat-flash-slot overlay"
+                data-testid={`mat-flash-slot-${playerIdx}`}
+                style={{
+                  left: `${(slot.x * 100).toFixed(2)}%`,
+                  top: `${(slot.y * 100).toFixed(2)}%`,
+                  width: `${(sprite.width * 100).toFixed(2)}%`,
+                }}
+              />
+            );
+          })()
+        : null}
 
       {/* gaiaformer：可用占槽（左→右）；baltaks 暂存 gaia 区的叠在 gaia 区旁 */}
       {Array.from({ length: p.gaiaformers.available }, (_, i) =>

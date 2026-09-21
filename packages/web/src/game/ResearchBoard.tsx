@@ -18,14 +18,14 @@
  */
 import type { CSSProperties, ReactElement } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { BoardActionId, ResearchTrack, TechTilePosition } from '@gaia/engine';
+import type { BoardActionId, FederationTokenId, ResearchTrack, TechTilePosition } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
 import {
+  ACTION_TOKEN_IMAGE,
   RESEARCH_BOARD_BG,
   advTechTileImage,
   economyOverlayImage,
   federationTokenImage,
-  markerImage,
   QIC_COVER_IMAGE,
   techTileImage,
 } from '../assets';
@@ -56,7 +56,6 @@ import {
   QIC_COVER_RECT,
   TECH_TILE_ASPECT,
   TECH_STACK_OFFSET_PCT,
-  TECH_STACK_WIDTH_PCT,
   TECH_TILE_WIDTH,
   TRACK_COLUMN_X,
   TRACK_LEVEL_Y,
@@ -112,6 +111,12 @@ export interface ResearchBoardProps {
   availableActions?: ReadonlySet<string> | null | undefined;
   /** 直接点击行动格（未在选择态）→ 由 GameScreen 开选择并预填 action 字段。 */
   onBoardAction?: ((id: BoardActionId) => void) | undefined;
+  /** 行动红框：爬轨到达的等级格（~5s 提示）。 */
+  flashResearch?: { track: ResearchTrack; level: number } | null | undefined;
+  /** 联邦标记选择态（组建联邦第二步）：可拿的标记 id 集合（命中才可点）。 */
+  fedTokenOptions?: ReadonlySet<string> | null | undefined;
+  /** 点击供应区联邦片 → 选为联邦标记。 */
+  onFedTokenPick?: ((token: FederationTokenId) => void) | undefined;
 }
 
 export function ResearchBoard({
@@ -122,6 +127,9 @@ export function ResearchBoard({
   onPick,
   availableActions,
   onBoardAction,
+  flashResearch,
+  fedTokenOptions,
+  onFedTokenPick,
 }: ResearchBoardProps): ReactElement {
   const board = state.board;
   /** 该值是否当前可点。 */
@@ -192,11 +200,13 @@ export function ResearchBoard({
                       <span
                         key={i}
                         className="player-dot"
-                        style={{
-                          left: `${(50 + (k - (here.length - 1) / 2) * LEVEL_DOT_STAGGER_FRAC * 100).toFixed(2)}%`,
-                          width: `${LEVEL_DOT_FRAC * 100}%`,
-                          background: playerColor(state, i),
-                        }}
+                        style={
+                          {
+                            left: `${(50 + (k - (here.length - 1) / 2) * LEVEL_DOT_STAGGER_FRAC * 100).toFixed(2)}%`,
+                            width: `${LEVEL_DOT_FRAC * 100}%`,
+                            '--pc': playerColor(state, i),
+                          } as CSSProperties
+                        }
                         data-player={i}
                       />
                     ))}
@@ -222,6 +232,19 @@ export function ResearchBoard({
           />
         ) : null}
 
+        {/* 行动红框：爬轨到达的等级格（~5s 提示） */}
+        {flashResearch !== null && flashResearch !== undefined && flashResearch.level >= 1 && flashResearch.level <= 5 ? (
+          <span
+            className="rb-flash overlay"
+            data-testid={`rb-flash-${flashResearch.track}`}
+            style={{
+              left: `${TRACK_COLUMN_X[flashResearch.track] * 100}%`,
+              top: `${TRACK_LEVEL_Y[flashResearch.level - 1]! * 100}%`,
+              width: `${LEVEL_BOX_WIDTH * 100}%`,
+            }}
+          />
+        ) : null}
+
         {/* LF 经济轨 L3/L4 覆盖板（pw/vp 面） */}
         {board.economyOverlay !== null ? (
           <img
@@ -233,14 +256,13 @@ export function ResearchBoard({
           />
         ) : null}
 
-        {/* 标准科技板（轨道位 + 底排自由位）：按剩余张数错落堆叠
-            （每层向右上偏移，整叠居中；拿完露出印刷空槽） */}
+        {/* 标准科技板（轨道位 + 底排自由位）：按剩余张数堆叠——**顶片与高级片同形式
+            （满宽居中于槽位）**，下层向左下露出边缘表张数；拿完露出印刷空槽 */}
         {TECH_POSITION_ORDER.map((pos) => {
           const tile = board.techTilePositions[pos];
           const left = board.techTiles[tile] ?? 0;
           const can = pickable('techTile', tile);
           const n = Math.max(left, 0);
-          const c = (n - 1) / 2;
           return (
             <button
               key={pos}
@@ -258,9 +280,9 @@ export function ResearchBoard({
                   key={i}
                   className="tile-img stack-tile"
                   style={{
-                    width: `${TECH_STACK_WIDTH_PCT}%`,
-                    left: `${(100 - TECH_STACK_WIDTH_PCT) / 2 + (i - c) * TECH_STACK_OFFSET_PCT}%`,
-                    top: `${(100 - TECH_STACK_WIDTH_PCT) / 2 + (c - i) * TECH_STACK_OFFSET_PCT * TECH_TILE_ASPECT}%`,
+                    width: '100%',
+                    left: `${-(n - 1 - i) * TECH_STACK_OFFSET_PCT}%`,
+                    top: `${(n - 1 - i) * TECH_STACK_OFFSET_PCT * TECH_TILE_ASPECT}%`,
                   }}
                   src={techTileImage(tile)}
                   alt={techTileName(tile)}
@@ -345,7 +367,7 @@ export function ResearchBoard({
               {used ? (
                 <img
                   className="action-token"
-                  src={markerImage('ActionToken')}
+                  src={ACTION_TOKEN_IMAGE}
                   alt="已用"
                   style={{ width: `${(ACTION_TOKEN_SIZE / ACTION_ZONE_SIZE) * 100}%` }}
                 />
@@ -361,22 +383,28 @@ export function ResearchBoard({
         {/* 联邦标记供应（图）：单行放下，标记随数量等比缩小（fedTokenMaxWidth）；无文字标签 */}
         <div className="fed-supply" data-testid="fed-supply">
           {(() => {
-            // 格伦星人专属联邦片不在公共供应展示（实体上放在格伦星人族板 PI 上，PI 建成时获得）
+            // 格伦星人专属联邦片不在公共供应展示（实体上放在格伦星人族板 PI 格右侧的
+            // 印刷联邦徽章位——PlayerMat 的 gleensFedSlot，PI 建成时获得）
             const supplied = (Object.entries(board.federationTokens) as [string, number][]).filter(
               ([id, n]) => n > 0 && id !== 'gleens',
             );
-            return supplied.map(([id, n]) => (
-              <span
-                key={id}
-                className="fed-item"
-                data-fed={id}
-                style={{ maxWidth: fedTokenMaxWidth(supplied.length, 6) }}
-                title={`${federationTokenName(id as never)}（剩 ${n}）`}
-              >
-                <img className="tile-img fed" src={federationTokenImage(id as never)} alt={federationTokenName(id as never)} />
-                <span className="fed-count">×{n}</span>
-              </span>
-            ));
+            return supplied.map(([id, n]) => {
+              const canFedPick = fedTokenOptions?.has(id) === true && onFedTokenPick !== undefined;
+              return (
+                <span
+                  key={id}
+                  className={`fed-item${canFedPick ? ' fed-pickable' : ''}`}
+                  data-fed={id}
+                  data-testid={`fed-supply-${id}`}
+                  style={{ maxWidth: fedTokenMaxWidth(supplied.length, 6) }}
+                  title={`${federationTokenName(id as never)}（剩 ${n}）${canFedPick ? '：点击选为联邦标记' : ''}`}
+                  onClick={canFedPick ? () => onFedTokenPick(id as never) : undefined}
+                >
+                  <img className="tile-img fed" src={federationTokenImage(id as never)} alt={federationTokenName(id as never)} />
+                  <span className="fed-count">×{n}</span>
+                </span>
+              );
+            });
           })()}
         </div>
       </div>

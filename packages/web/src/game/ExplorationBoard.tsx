@@ -8,11 +8,19 @@
  * 仅 lostFleet 启用时渲染。
  */
 import type { ReactElement } from 'react';
+import { FACTIONS } from '@gaia/engine';
 import type { FactionId, PlayerIndex } from '@gaia/engine';
 import type { FilteredState } from '@gaia/protocol';
-import { SHUTTLE_IMAGE, boosterImage, factionPanelImage } from '../assets';
+import { ACTION_TOKEN_IMAGE, boosterImage, factionPanelImage, shuttleImage } from '../assets';
 import { boosterName, factionName, shipName } from './display';
-import { PANEL_SHUTTLE_SLOTS, PANEL_SHUTTLE_W, PANEL_SLOT_OFFSET_2P } from './panel-calibration';
+import {
+  PANEL_SHUTTLE_SLOTS,
+  PANEL_SHUTTLE_W,
+  PANEL_SLOT_OFFSET_2P,
+  PANEL_SPECIAL_ACTION,
+  PANEL_SPECIAL_SIZE,
+  PANEL_SPECIAL_SLOT,
+} from './panel-calibration';
 
 /** 各族探索板调整文本（增强/削弱，按规则书 p16 与族能力；实图面板上为图标，文本进 tooltip）。 */
 const FACTION_ADJUST: Record<FactionId, string> = {
@@ -39,31 +47,49 @@ const FACTION_ADJUST: Record<FactionId, string> = {
 export interface ExplorationBoardProps {
   state: FilteredState;
   seat: PlayerIndex;
+  /** 自己回合且特殊行动合法时为 true（面板特殊行动格热区高亮可点，与 PI 热区同口径）。 */
+  specialAvailable?: boolean | undefined;
+  /** 点击特殊行动格 → 与「特殊行动」按钮同效。 */
+  onSpecialAction?: (() => void) | undefined;
 }
 
 /**
  * 版图右侧竖列：种族飞船面板（上，撑满剩余高度）+ 当回合助推片（下，高 = --booster-h
  * = 版图高一半）。非 LF 局面板不渲染、助推片仍在（标准局同样有助推片）。
+ * flashBooster：Pass 换得新助推片后 ~5s 红框提示。
  */
-export function PanelBoosterStack({ state, seat }: ExplorationBoardProps): ReactElement {
+export function PanelBoosterStack({ state, seat, flashBooster = false, specialAvailable, onSpecialAction }: ExplorationBoardProps & { flashBooster?: boolean | undefined }): ReactElement {
   const p = state.players[seat];
+  // 助推片特殊行动（booster4 免费步建矿 / booster5 +3 射程）本轮已用 → 片上盖 action token
+  const boosterUsed = p !== undefined && (p.booster === 'booster4' || p.booster === 'booster5') && p.specialUsed.includes(p.booster);
   return (
     <div className="panel-booster-stack" data-testid={`panel-booster-stack-${seat}`}>
-      <ExplorationBoard state={state} seat={seat} />
+      <ExplorationBoard state={state} seat={seat} specialAvailable={specialAvailable} onSpecialAction={onSpecialAction} />
       {p?.booster != null ? (
-        <img
-          className="tile-img booster side-booster"
-          data-testid={`side-booster-${seat}`}
-          src={boosterImage(p.booster)}
-          alt={boosterName(p.booster)}
-          title={boosterName(p.booster)}
-        />
+        <span className="tile-wrap side-booster-wrap">
+          <img
+            className={`tile-img booster side-booster${flashBooster ? ' flash' : ''}${boosterUsed ? ' used' : ''}`}
+            data-testid={`side-booster-${seat}`}
+            src={boosterImage(p.booster)}
+            alt={boosterName(p.booster)}
+            title={boosterName(p.booster)}
+          />
+          {boosterUsed ? (
+            <img
+              className="action-token tile-used-token"
+              data-testid={`booster-used-${seat}`}
+              src={ACTION_TOKEN_IMAGE}
+              alt="已用"
+              title="助推片特殊行动：本轮已用"
+            />
+          ) : null}
+        </span>
       ) : null}
     </div>
   );
 }
 
-export function ExplorationBoard({ state, seat }: ExplorationBoardProps): ReactElement | null {
+export function ExplorationBoard({ state, seat, specialAvailable, onSpecialAction }: ExplorationBoardProps): ReactElement | null {
   if (state.config.lostFleet !== true) return null;
   const p = state.players[seat];
   if (p === undefined) return null;
@@ -71,6 +97,12 @@ export function ExplorationBoard({ state, seat }: ExplorationBoardProps): ReactE
   const twoPlayer = state.config.playerCount === 2;
   const totalShuttles = twoPlayer ? 2 : 3;
   const deployed = p.shuttles.length;
+  const factionColor = FACTIONS[p.faction].color;
+  // 探索板特殊行动格（部分族有，印在面板中部八边形）：本轮已用 → 盖片置灰；
+  // 自己回合且有合法特殊行动 → 热区可点（与 PI 热区/「特殊行动」按钮同效）
+  const specialId = PANEL_SPECIAL_ACTION[p.faction];
+  const specialUsed = specialId !== undefined && (p.specialUsed.includes(specialId) || p.roundAbilityUsed.includes(specialId));
+  const specialCan = specialId !== undefined && !specialUsed && specialAvailable === true && onSpecialAction !== undefined;
   return (
     <section
       className="exploration-board"
@@ -79,6 +111,23 @@ export function ExplorationBoard({ state, seat }: ExplorationBoardProps): ReactE
       title={`${factionName(p.faction)}飞船面板（派遣 ${cost} VP）\n${FACTION_ADJUST[p.faction]}`}
     >
       <img className="eb-panel-img" src={factionPanelImage(p.faction)} alt={`${factionName(p.faction)}飞船面板`} />
+      {specialId !== undefined ? (
+        <button
+          type="button"
+          className={`eb-special-cell${specialUsed ? ' used' : ''}${specialCan ? ' available' : ''}`}
+          style={{
+            left: `${PANEL_SPECIAL_SLOT.x * 100}%`,
+            top: `${PANEL_SPECIAL_SLOT.y * 100}%`,
+            width: `${PANEL_SPECIAL_SIZE * 100}%`,
+          }}
+          data-testid={`eb-special-${seat}`}
+          disabled={!specialCan}
+          title={specialUsed ? '特殊行动（本轮已用）' : specialCan ? '探索板特殊行动（同特殊行动按钮）' : '探索板特殊行动'}
+          onClick={specialCan ? () => onSpecialAction?.() : undefined}
+        >
+          {specialUsed ? <img className="action-token" src={ACTION_TOKEN_IMAGE} alt="已用" /> : null}
+        </button>
+      ) : null}
       {Array.from({ length: totalShuttles }, (_, i) => {
         const used = i < deployed;
         const shuttle = used ? p.shuttles[i] : undefined;
@@ -96,7 +145,7 @@ export function ExplorationBoard({ state, seat }: ExplorationBoardProps): ReactE
             }}
             title={shuttle !== undefined ? `已派往 ${shipName(shuttle.ship)}` : '未派遣'}
           >
-            {used ? null : <img src={SHUTTLE_IMAGE} alt="穿梭机" />}
+            {used ? null : <img src={shuttleImage(factionColor)} alt="穿梭机" />}
           </span>
         );
       })}

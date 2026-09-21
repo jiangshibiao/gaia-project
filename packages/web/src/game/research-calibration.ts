@@ -64,22 +64,23 @@ export const FREE_TECH_SLOTS: readonly RelPoint[] = [
   { x: 0.83, y: 0.791 },
 ];
 
-/** power 行动格中心（power1..7，左→右 = 费用 7/5/4/4/4/3/3）。 */
+/** power 行动格中心（power1..7，左→右 = 费用 7/5/4/4/4/3/3）。
+    y 2026-09-21 PIL 紫色八边形重测（0.957→0.9516，x 微调 power2/4）。 */
 export const POWER_ACTION_SLOTS: readonly RelPoint[] = [
-  { x: 0.063, y: 0.957 },
-  { x: 0.151, y: 0.957 },
-  { x: 0.238, y: 0.957 },
-  { x: 0.326, y: 0.957 },
-  { x: 0.415, y: 0.957 },
-  { x: 0.505, y: 0.957 },
-  { x: 0.593, y: 0.957 },
+  { x: 0.063, y: 0.9516 },
+  { x: 0.15, y: 0.9516 },
+  { x: 0.238, y: 0.9516 },
+  { x: 0.325, y: 0.9516 },
+  { x: 0.415, y: 0.9516 },
+  { x: 0.505, y: 0.9516 },
+  { x: 0.593, y: 0.9516 },
 ];
 
 /** qic 行动格中心（qic1..3，左→右 = 费用 4/3/2）。 */
 export const QIC_ACTION_SLOTS: readonly RelPoint[] = [
-  { x: 0.69, y: 0.957 },
-  { x: 0.801, y: 0.957 },
-  { x: 0.921, y: 0.957 },
+  { x: 0.69, y: 0.9516 },
+  { x: 0.801, y: 0.9516 },
+  { x: 0.921, y: 0.9516 },
 ];
 
 /** 行动格叠加定位（power1..7 + qic1..3）。 */
@@ -122,24 +123,23 @@ export const ECONOMY_OVERLAY_POS: RelPoint = { x: 0.795, y: 0.247 };
 export const LEVEL_BOX_WIDTH = 0.092;
 /** 等级格容器宽高比（格 ~270×125 原图像素）。 */
 export const LEVEL_BOX_RATIO = 2.1;
-/** 玩家等级 token 直径（相对等级格容器宽）。 */
-export const LEVEL_DOT_FRAC = 0.2;
+/** 玩家等级 token 宽度（相对等级格容器宽；圆柱形 = 顶椭圆+柱身，高由 CSS 宽高比推出）。 */
+export const LEVEL_DOT_FRAC = 0.28;
 /** 同格多 token 的横向错开步长（相对等级格容器宽）。 */
 export const LEVEL_DOT_STAGGER_FRAC = 0.24;
 /** 科技板图宽度（相对图宽；≈2.3× 印刷槽位，与飞船科技片同放置思路）。 */
 export const TECH_TILE_WIDTH = 0.13;
 /** 科技板图宽高比（TEC* 扫描图 178×134；槽位按钮按此定高）。 */
 export const TECH_TILE_ASPECT = 178 / 134;
-/** 错落堆叠：单张图宽（相对槽宽 %，缩小以露出错层）。 */
-export const TECH_STACK_WIDTH_PCT = 85;
-/** 错落堆叠：每层向右上偏移步长（相对槽宽 %，整叠居中于槽位）。 */
-export const TECH_STACK_OFFSET_PCT = 7.5;
+/** 堆叠：每层向左下偏移步长（相对槽宽 %，顶片满宽居中、下层露出边缘表张数）。 */
+export const TECH_STACK_OFFSET_PCT = 5;
 /** 高级板图宽度（相对图宽）。 */
 export const ADV_TILE_WIDTH = 0.12;
-/** 行动格热区直径（相对图宽）。 */
-export const ACTION_ZONE_SIZE = 0.078;
-/** 已用 action token 直径（相对图宽）。 */
-export const ACTION_TOKEN_SIZE = 0.034;
+/** 行动格热区直径（相对图宽；印刷八边形外径 ≈150px，2026-09-21 实测 0.082）。 */
+export const ACTION_ZONE_SIZE = 0.082;
+/** 已用 action token 直径（相对图宽；trim 素材内容≈93% 图宽，0.084 刚好盖住印刷格
+    ——曾 0.034 不足一半，灰化后用户完全看不出已盖）。 */
+export const ACTION_TOKEN_SIZE = 0.084;
 /** Terraforming L5 联邦标记宽度（相对图宽）。 */
 export const L5_FED_WIDTH = 0.045;
 /** 经济覆盖板宽度（相对图宽）。 */

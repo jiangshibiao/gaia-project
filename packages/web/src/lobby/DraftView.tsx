@@ -12,7 +12,7 @@ import type { FormEvent, ReactElement } from 'react';
 import { FACTIONS } from '@gaia/engine';
 import type { FactionId, PlayerIndex } from '@gaia/engine';
 import type { DraftState, RoomState } from '@gaia/protocol';
-import { factionImage } from '../assets';
+import { factionBoardImage, factionImage } from '../assets';
 import { factionName } from '../game/display';
 import type { GameStore } from '../game/store';
 import { useGameStore } from '../game/store';
@@ -52,6 +52,8 @@ export function DraftView({ store, room, draft }: { store: GameStore; room: Room
   const pool = draftPool(lostFleet);
   const [bidTarget, setBidTarget] = useState<FactionId | null>(null);
   const [bidText, setBidText] = useState('');
+  /** 悬浮预览的种族（展示族板大图；moweyds 无高清图时回退头像小图）。 */
+  const [hoverFaction, setHoverFaction] = useState<FactionId | null>(null);
 
   /** 座位 → 持有信息（picks 的 Record 键在 JSON 里是字符串）。 */
   const pickOf = (seat: PlayerIndex) => draft.picks[seat] ?? null;
@@ -125,6 +127,10 @@ export function DraftView({ store, room, draft }: { store: GameStore; room: Room
                 data-testid={`draft-faction-${faction}`}
                 disabled={!clickable}
                 onClick={() => onFactionClick(faction)}
+                onMouseEnter={() => setHoverFaction(faction)}
+                onMouseLeave={() => setHoverFaction(null)}
+                onFocus={() => setHoverFaction(faction)}
+                onBlur={() => setHoverFaction(null)}
               >
                 <img className="draft-faction-img" src={factionImage(faction)} alt={factionName(faction)} />
                 <span className="draft-faction-name">{factionName(faction)}</span>
@@ -139,6 +145,17 @@ export function DraftView({ store, room, draft }: { store: GameStore; room: Room
           );
         })}
       </ul>
+
+      {/* 悬浮种族面板预览（右侧固定，pointer-events none 不挡选族操作） */}
+      {hoverFaction !== null ? (
+        <div className="draft-hover-pop" data-testid="draft-hover-pop">
+          <img
+            src={factionBoardImage(hoverFaction) ?? factionImage(hoverFaction)}
+            alt={`${factionName(hoverFaction)}族板`}
+          />
+          <span>{factionName(hoverFaction)}</span>
+        </div>
+      ) : null}
 
       {bidTarget !== null ? (
         <form className="draft-bid-form" data-testid="draft-bid-form" onSubmit={onBidSubmit}>
