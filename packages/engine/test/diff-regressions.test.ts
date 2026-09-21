@@ -9,7 +9,9 @@ import { describe, expect, it } from 'vitest';
 import {
   applyAction,
   enumerateActions,
+  finalCount,
   hexDistance,
+  mapNeighbors,
   newGame,
   parseHexKey,
   terraformingSteps,
@@ -550,6 +552,52 @@ describe('LF：新建筑并入邻近联邦', () => {
     });
     const next = applyAction(s, { type: 'build-mine', hex: h2 }, { assumeLegal: true });
     expect(next.map[h2]!.federations).toContain(0);
+  });
+
+  it('联邦卫星邻接星球上建矿同样并入，且终局 structure-fed 计入新矿', () => {
+    let s = actionPhase(CONFIG_LF);
+    let sat!: HexKey;
+    let target!: HexKey;
+    let h0!: HexKey;
+    let h1!: HexKey;
+    s = rig(s, (st) => {
+      st.pending = null;
+      const anyPlanets = (Object.keys(st.map) as HexKey[]).filter((k) => st.map[k]!.building === undefined);
+      const a = anyPlanets.find((k) => anyPlanets.filter((k2) => k2 !== k && dist(k, k2) <= 1).length >= 1)!;
+      const b = anyPlanets.find((k) => k !== a && dist(k, a) <= 1)!;
+      for (const k of [a, b] as HexKey[]) {
+        st.map[k]!.planet = 'terra';
+      }
+      st.map[a]!.building = { type: 'ts', player: 0 };
+      st.map[b]!.building = { type: 'ts', player: 0 };
+      st.map[a]!.federations = [0];
+      st.map[b]!.federations = [0];
+      // 卫星格：b 的 empty 邻格（登记 federations + satelliteOf，模拟组联邦时的卫星）
+      const satKey = mapNeighbors(st.map, b).find(
+        (k) => st.map[k]!.planet === 'empty' && st.map[k]!.building === undefined && st.map[k]!.ship === undefined,
+      )!;
+      st.map[satKey]!.federations = [0];
+      st.map[satKey]!.satelliteOf = 0;
+      // 目标星球：卫星格的邻格（不邻 a/b，保持"经卫星挨着"）
+      const t = mapNeighbors(st.map, satKey).find(
+        (k) => k !== b && st.map[k]!.planet !== 'empty' && st.map[k]!.building === undefined && dist(k, a) > 1 && dist(k, b) > 1,
+      )!;
+      st.map[t]!.planet = 'terra';
+      st.players[0]!.resources.ore = 15;
+      st.players[0]!.resources.credits = 30;
+      h0 = a;
+      h1 = b;
+      sat = satKey;
+      target = t;
+    });
+    const next = applyAction(s, { type: 'build-mine', hex: target }, { assumeLegal: true });
+    // 新矿并入联邦（卫星邻格同样触发 addBuildingToNearbyFederation）
+    expect(next.map[target]!.federations).toContain(0);
+    // 终局「联邦内建筑最多」：h0/h1/新矿 = 3（卫星格非建筑不计）
+    expect(finalCount(next, 0, 'structure-fed')).toBe(3);
+    void h0;
+    void h1;
+    void sat;
   });
 });
 
