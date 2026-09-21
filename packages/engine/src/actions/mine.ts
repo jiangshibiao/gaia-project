@@ -191,6 +191,12 @@ export function computeMineTarget(
   if (hex.building !== undefined || hex.ship !== undefined) {
     return null;
   }
+  // 他人留置的盖亚机所在星球不可建矿（盖亚机是 structure——规则书建矿条件
+  // "It is empty (has no structures on it)"；参考引擎同口径：gaiaformer 占据的
+  // hex 为 occupied。主人自己可建并收回盖亚机，见下方 gaiaformerRecover）。
+  if (hex.gaiaformerOf !== undefined && hex.gaiaformerOf !== idx) {
+    return null;
+  }
   const planet = hex.planet;
   const isHome = (HOME_PLANET_TYPES as readonly string[]).includes(planet);
   if (!isHome && planet !== 'gaia' && planet !== 'proto' && planet !== 'asteroid') {

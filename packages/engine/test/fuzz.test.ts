@@ -86,9 +86,10 @@ function checkInvariants(config: GameConfig, state: GameState, log: { type: stri
     expect(new Set(p.colonizedSectors).size).toBe(p.colonizedSectors.length);
   }
 
-  // 科技板守恒：LF = 基础供应 36 + 船上放置（3 种各 1 块；2 人局 2 槽放 2 块、
-  // 3–4 人局 3 槽放 3 块，其余移出游戏）；非 LF = 36。船上板按参考 count 模型：
-  // 每名玩家可拿 1 份拷贝（remaining = 人数 − 已拿人数）。高级板槽位：LF 7 槽（含扩展条）/ 非 LF 6 槽。
+  // 科技板守恒：基础供应 = 9 种 × 人数（规则：2 人 2、3 人 3、4 人 4）；
+  // LF 另加船上放置（3 种各 1 块；2 人局 2 槽放 2 块、3–4 人局 3 槽放 3 块，
+  // 其余移出游戏）。船上板按参考 count 模型：每名玩家可拿 1 份拷贝
+  // （remaining = 人数 − 已拿人数）。高级板槽位：LF 7 槽（含扩展条）/ 非 LF 6 槽。
   const lf = state.config.lostFleet;
   const techSupply = Object.values(state.board.techTiles).reduce((s, n) => s + n, 0);
   const techHeld = state.players.reduce((s, p) => s + p.techTiles.length, 0);
@@ -96,8 +97,9 @@ function checkInvariants(config: GameConfig, state: GameState, log: { type: stri
     (s, sh) => s + sh.techTiles.length * (state.config.playerCount - sh.techTileClaims.length),
     0,
   );
+  const baseCopies = 9 * state.config.playerCount;
   const shipTileCopies = lf ? (state.config.playerCount <= 2 ? 2 : 3) * state.config.playerCount : 0;
-  expect(techSupply + techHeld + techOnShips).toBe(lf ? 36 + shipTileCopies : 36);
+  expect(techSupply + techHeld + techOnShips).toBe(lf ? baseCopies + shipTileCopies : baseCopies);
   const advLeft = state.board.advTechTiles.filter((t) => t !== null).length;
   const advHeld = state.players.reduce((s, p) => s + p.advTechTiles.length, 0);
   expect(advLeft + advHeld).toBe(lf ? 7 : 6);

@@ -51,13 +51,25 @@ describe('边界场景棋理', () => {
   });
 
   it('L5 研究：必带翻面标记，且优先翻低价值标记（fed6 先于 fed2）', () => {
-    // 真实局面（seed=2 第 6 轮命中）：枚举个数 >0 且全部带 flipToken；最佳 L5 > 裸 pass。
-    const { state, actor, legal } = playUntil(
-      (_s, _a, l) => l.some((a) => a.type === 'research' && a.flipToken !== undefined),
-      { seed: 2 },
-    );
+    // 定向构造（2026-09-21 起不再依赖随机命中——联邦枚举变全后随机对局
+    // 研究进度被稀释，L5+flipToken 场景系统性消失）：主阶段手术 sci L4 +
+    // 未翻绿面标记 + 充足知识 → L5 枚举个数 >0 且全部带 flipToken；最佳 L5 > 裸 pass。
+    const { state: base, actor } = playUntil((s) => s.phase === 'action');
+    const state = structuredClone(base);
+    const p = state.players[actor]!;
+    p.research.sci = 4;
+    p.resources.knowledge = 20;
+    p.federationTokens = [
+      { id: 'fed6', flipped: false },
+      { id: 'fed2', flipped: false },
+    ];
+    const legal = enumerateActions(state, actor);
     const l5 = legal.filter((a) => a.type === 'research' && a.flipToken !== undefined);
     expect(l5.length).toBeGreaterThan(0);
+    // 升 L5 必须翻绿面标记（无未翻票时 L5 不可达）
+    const l5sci = legal.filter((a): a is Extract<Action, { type: 'research' }> => a.type === 'research' && a.track === 'sci');
+    expect(l5sci.length).toBeGreaterThan(0);
+    expect(l5sci.every((a) => a.flipToken !== undefined)).toBe(true);
     const best = Math.max(...l5.map((a) => scoreAction(state, actor, a)));
     expect(best).toBeGreaterThan(barePassScore(state, actor));
 

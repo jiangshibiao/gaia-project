@@ -82,7 +82,7 @@ export function newGame(config: GameConfig): GameState {
   }
 
   // 1. 公共板块（先于地图：LF 地图需按终局板保证小行星数量）
-  const board = preset !== undefined ? buildBoardFromPreset(preset) : buildBoard(rng, config.playerCount, lostFleet);
+  const board = preset !== undefined ? buildBoardFromPreset(preset, config.playerCount) : buildBoard(rng, config.playerCount, lostFleet);
 
   // 2. 地图（LF：错位布局 + Interspace + 深空扇区 + 飞船初始放置）
   const map =
@@ -409,14 +409,14 @@ function generateLostFleetMap(rng: Rng, playerCount: number, board: BoardState):
 
 /**
  * 按 preset 摆公共板块（不消耗 rng；供应计数与 buildBoard 基础局分支一致）。
- * 注：参考引擎科技板供应数 = 人数（3 人局 ×3），本引擎为每种 ×4；
- * 每名玩家同种板至多持 1 块，供应差永不影响合法性，对拍不比较该计数。
+ * 注：科技板供应数 = 人数（规则；2 人 2、3 人 3、4 人 4——与参考引擎一致；
+ * 每名玩家同种板至多持 1 块，对拍不比较该计数）。
  */
-function buildBoardFromPreset(preset: SetupPreset): BoardState {
+function buildBoardFromPreset(preset: SetupPreset, playerCount: number): BoardState {
   const techTiles: Record<string, number> = {};
   for (const t of Object.values(TECH_TILES)) {
     if (!t.lostFleet) {
-      techTiles[t.id] = t.count;
+      techTiles[t.id] = Math.min(t.count, playerCount);
     }
   }
   const federationTokens: Record<string, number> = {};
@@ -469,11 +469,12 @@ function buildBoard(rng: Rng, playerCount: number, lostFleet: boolean): BoardSta
     .map((t) => t.id as FinalTileId);
   const finalScoring = rng.shuffle(finalPool).slice(0, 2);
 
-  // 标准科技板供应：9 种 × 4（LF 船上标准板不混池，见 data/techs.ts）。
+  // 标准科技板供应：9 种 × 人数（规则：2 人 2、3 人 3、4 人 4；
+  // LF 船上标准板不混池，见 data/techs.ts）。
   const techTiles: Record<string, number> = {};
   for (const t of Object.values(TECH_TILES)) {
     if (!t.lostFleet) {
-      techTiles[t.id] = t.count;
+      techTiles[t.id] = Math.min(t.count, playerCount);
     }
   }
   // 9 块标准板洗入 9 个位置（6 条轨正下方 + 底排 3 块；参照 reference engine.ts：

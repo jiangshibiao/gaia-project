@@ -236,3 +236,46 @@ describe('合法性框架', () => {
     expect(a).toEqual(b);
   });
 });
+
+describe('盖亚机留置星球的建矿限制', () => {
+  /**
+   * 规则：盖亚机属 structure，建矿目标必须 "empty (has no structures on it)"——
+   * 他人留置的盖亚机所在星球不可建矿；主人建矿时收回盖亚机（免居住费）。
+   * （曾漏检 hex.gaiaformerOf，对手得以在留置盖亚机的绿星上建矿。）
+   */
+  it('他人盖亚机留置的绿星：枚举排除 + 强行应用抛错；主人可建并收回', () => {
+    const state = actionPhase(CONFIG_2P); // terrans(0) vs lantids(1)，seat 0 行动
+    const s = structuredClone(state);
+    // 找一个 seat 0 射程内的空星球格，改造为绿星并放座位 1 的留置盖亚机
+    const src = colonizedHexes(s.map, 0)[0];
+    expect(src).toBeDefined();
+    const target = mapNeighbors(s.map, src!).find(
+      (k) => s.map[k]!.building === undefined && s.map[k]!.ship === undefined && s.map[k]!.planet !== 'empty',
+    );
+    expect(target).toBeDefined();
+    const hex = s.map[target!]!;
+    hex.planet = 'gaia';
+    hex.gaiaformerOf = 1;
+
+    // 座位 0（非盖亚机主）：build-mine 枚举不含该格
+    const mines = legalOf(s).filter((a): a is Extract<Action, { type: 'build-mine' }> => a.type === 'build-mine');
+    expect(mines.some((a) => a.hex === target)).toBe(false);
+    // 强行应用同样拒绝
+    expect(() => applyAction(s, { type: 'build-mine', hex: target! })).toThrowError(
+      expect.objectContaining({ code: 'illegal-action' }) as Error,
+    );
+
+    // 座位 1（盖亚机主）：轮到后可建（建矿收回盖亚机）
+    const s1 = structuredClone(s);
+    s1.currentPlayerIdx = 1;
+    const mines1 = enumerateActions(s1, 1).filter(
+      (a): a is Extract<Action, { type: 'build-mine' }> => a.type === 'build-mine',
+    );
+    expect(mines1.some((a) => a.hex === target)).toBe(true);
+    const gfBefore = s1.players[1]!.gaiaformers.available;
+    const next = applyAction(s1, { type: 'build-mine', hex: target! });
+    expect(next.map[target!]!.building).toEqual({ type: 'mine', player: 1 });
+    expect(next.map[target!]!.gaiaformerOf).toBeUndefined();
+    expect(next.players[1]!.gaiaformers.available).toBe(gfBefore + 1);
+  });
+});

@@ -251,3 +251,117 @@ describe('种族差异', () => {
     expect(p.power).toEqual(before.power); // power 不变
   });
 });
+
+describe('联邦子集合并枚举（3+ 分量）', () => {
+  /**
+   * 2026-09-21 线上 bug 回归：分量 ac2+mine(4) / ts(2) / mine(1) 两两合并均不达标
+   * （4+2=6、4+1=5），但三分量合并 4+2+1=7 合法——旧枚举只做两两/全体，漏掉
+   * 部分合并解致"组建联邦"按钮全暗。同时验证卫星最少性（1 格共享桥接，
+   * 不多枚举同星球的多卫星形状）。
+   */
+  it('3 分量合并 4+2+1=7：枚举出 1 卫星共享桥形状且无多卫星重复', () => {
+    const state = rig((s) => {
+      clearBuildings(s);
+      // 找 empty 格 E、E 的 3 个互不相邻的星球邻居 N1/N2/N3、
+      // 以及 N1 的外侧邻居 M（不与 N2/N3 相邻）——用户局面同构
+      const found = (() => {
+        for (const [e, hex] of Object.entries(s.map) as [HexKey, (typeof s.map)[HexKey]][]) {
+          if (hex.planet !== 'empty' || hex.building !== undefined || hex.ship !== undefined) continue;
+          const nbs = mapNeighbors(s.map, e).filter(
+            (k) => s.map[k]!.planet !== 'empty' && s.map[k]!.building === undefined,
+          );
+          for (let i = 0; i < nbs.length; i++) {
+            for (let j = i + 1; j < nbs.length; j++) {
+              for (let k = j + 1; k < nbs.length; k++) {
+                const trio = [nbs[i]!, nbs[j]!, nbs[k]!];
+                const independent = trio.every((a, x) =>
+                  trio.every((b, y) => x === y || !mapNeighbors(s.map, a).includes(b)),
+                );
+                if (!independent) continue;
+                const outer = mapNeighbors(s.map, trio[0]!).find(
+                  (o) =>
+                    o !== e &&
+                    s.map[o]!.planet !== 'empty' &&
+                    s.map[o]!.building === undefined &&
+                    !mapNeighbors(s.map, o).includes(trio[1]!) &&
+                    !mapNeighbors(s.map, o).includes(trio[2]!),
+                );
+                if (outer !== undefined) {
+                  return { e: e as HexKey, trio: trio as HexKey[], outer };
+                }
+              }
+            }
+          }
+        }
+        throw new Error('未找到桥三格');
+      })();
+      put(s, found.trio[0]!, 'ac2'); // 3
+      put(s, found.outer, 'mine'); // +1 → A 分量 = 4
+      put(s, found.trio[1]!, 'ts'); // B = 2
+      put(s, found.trio[2]!, 'mine'); // C = 1
+      (s as { __fedProbe?: unknown }).__fedProbe = found;
+    });
+    const found = (state as unknown as { __fedProbe: { e: HexKey; trio: HexKey[]; outer: HexKey } }).__fedProbe;
+    const planets = [found.trio[0], found.outer, found.trio[1], found.trio[2]].sort().join(',');
+    const feds = fedsOf(state);
+    expect(feds.length).toBeGreaterThan(0);
+    // 该 4 星球的形状存在且卫星恰为 {E}（1 颗，共享桥接）
+    const same = feds.filter((f) => [...f.hexes].sort().join(',') === planets);
+    expect(same.length).toBeGreaterThan(0);
+    for (const f of same) {
+      expect([...f.satellites].sort()).toEqual([found.e]);
+    }
+  });
+
+  it('极小性：达标分量不得再并入多余分量（{7} 与 {7,1} 不同时为候选）', () => {
+    const state = rig((s) => {
+      clearBuildings(s);
+      const [a, b, c] = findChain(s, 3);
+      put(s, a!, 'pi'); // 3
+      put(s, b!, 'ts'); // 2
+      put(s, c!, 'ts'); // 2 → 单分量 7（a-b-c 直连）
+      // 远处的孤立 mine（经卫星可桥，但并入即"多用星球"）
+      const far = (Object.keys(s.map) as HexKey[]).find(
+        (k) =>
+          ![a, b, c].includes(k) &&
+          s.map[k]!.planet !== 'empty' &&
+          s.map[k]!.building === undefined &&
+          ![a, b, c].some((x) => mapNeighbors(s.map, k).includes(x!)),
+      )!;
+      put(s, far, 'mine');
+      (s as { __fedProbe2?: unknown }).__fedProbe2 = { chain: [a, b, c], far };
+    });
+    const { chain, far } = (state as unknown as { __fedProbe2: { chain: HexKey[]; far: HexKey } }).__fedProbe2;
+    const chainKey = [...chain].sort().join(',');
+    const feds = fedsOf(state);
+    // 单分量 7 是候选
+    expect(feds.some((f) => [...f.hexes].sort().join(',') === chainKey)).toBe(true);
+    // 含 far 矿的超集形状一律不得存在
+    expect(feds.every((f) => !f.hexes.includes(far))).toBe(true);
+  });
+
+  it('极小性保留"桥"：分量在连通要道上（去掉后卫星变多），pv 富余也不算多余', () => {
+    // 布局：ac2-ts-mine-ts 四格直连链（A={ac2,ts}=5、X={mine}=1、B={ts}=2，pv 8）。
+    // 规则书 920-923：少 1 星球**且**少 1 卫星才算违规——{A,X,B} 去掉 X 后 {A,B}
+    // pv 7 仍达标但需卫星绕路（X 是桥，卫星变多）→ X 不多余、形状合法。
+    // （旧口径"pv 富余即多余"会误删此形状——fed-diff 对拍发现并修正。）
+    const state = rig((s) => {
+      clearBuildings(s);
+      const [a1, a2, x] = findChain(s, 3);
+      const b = mapNeighbors(s.map, x!).find((k) => k !== a2 && s.map[k]!.planet !== 'empty')!;
+      put(s, a1!, 'ac2');
+      put(s, a2!, 'ts');
+      put(s, x!, 'mine');
+      put(s, b, 'ts');
+      (s as { __fedBridge?: unknown }).__fedBridge = [a1, a2, x, b];
+    });
+    const [a1, a2, x, b] = (state as unknown as { __fedBridge: HexKey[] }).__fedBridge;
+    const planets = [a1!, a2!, x!, b].sort().join(',');
+    const shapes = fedsOf(state).filter((f) => [...f.hexes].sort().join(',') === planets);
+    // 桥形状被枚举且 0 卫星（四格直连，X 在要道上）
+    expect(shapes.length).toBeGreaterThan(0);
+    for (const f of shapes) {
+      expect(f.satellites).toEqual([]);
+    }
+  });
+});

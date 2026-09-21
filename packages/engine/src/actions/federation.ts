@@ -17,14 +17,14 @@
  * - 结算：hex.federations 登记（星球+卫星）、拿标记（绿面、立即得奖励）、
  *   触发 onFederationFormed（score4 +5vp）。
  *
- * 枚举策略（控制组合爆炸；注释自任务书）：
- * 对玩家未入联邦的已殖民星球按邻接聚成连通分量；枚举
+ * 枚举策略（2026-09-21 重写；对齐参考引擎 possibleCombinationsForFederations）：
+ * 对玩家未入联邦的已殖民星球按邻接聚成连通分量，枚举
  * (a) 每个 pv 达标且满足相邻约束的单分量联邦；
- * (b) 分量两两合并（BFS 最短卫星路径）；
- * (c) 全体分量的 MST 合并（仅当 (a)(b) 无候选——否则必然违反
- *     "不得多用星球+卫星"规则）。
- * 覆盖常见玩法；可能漏掉奇异 Steiner 解与子集合并解（如三个分量中任选两个
- * 再加第三个的部分合并），代码注释为证。
+ * (b) 分量子集枚举（≤12 分量）：pv ≥ 阈值且**极小**（去掉任一分量即不达标，
+ *     = "不得多用星球+卫星"），连通卫星取 Steiner 最少树（TM 启发式，
+ *     路径共享格只计 1 颗，与参考引擎 spanningTree heuristic 同型）；
+ * (c) 分量数 >12 时回退：两两合并 + 全体 MST（原策略，护栏防爆）。
+ * 更早版本只做两两合并/全体 MST，漏掉 3+ 分量部分合并解（曾致应有联邦时按钮全暗）。
  */
 import { IllegalActionError } from '../errors.js';
 import type { Action, FederationTokenId, FreeMineOptions, GameState, PlayerIndex, PowerAreaAmounts } from '../types.js';
@@ -267,6 +267,107 @@ function componentPv(state: GameState, idx: PlayerIndex, comp: HexKey[]): number
 }
 
 /**
+ * 星球集的最少卫星连接（Takahashi–Matsuyama Steiner 启发式，与参考引擎
+ * spanningTree "heuristic" 同型）：多源 BFS 逐次把最近的未接入星球格并入树。
+ * 返回所需卫星格集合；不可达（forbidden 阻挡）返回 null。
+ * 注：按格共享去重——多条连接路径共用同一空格时只计 1 颗卫星（最少性）。
+ */
+function steinerSatellites(state: GameState, planetHexes: HexKey[], forbidden: Set<HexKey>): Set<HexKey> | null {
+  const planetSet = new Set(planetHexes);
+  const remaining = new Set(planetHexes);
+  const tree = new Set<HexKey>();
+  const first = remaining.values().next().value as HexKey;
+  remaining.delete(first);
+  tree.add(first);
+  while (remaining.size > 0) {
+    const prev = new Map<HexKey, HexKey | null>();
+    const queue: HexKey[] = [];
+    for (const h of tree) {
+      prev.set(h, null);
+      queue.push(h);
+    }
+    let hit: HexKey | null = null;
+    outer: while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const nb of mapNeighbors(state.map, cur)) {
+        if (prev.has(nb) || forbidden.has(nb)) {
+          continue;
+        }
+        if (remaining.has(nb)) {
+          prev.set(nb, cur);
+          hit = nb;
+          break outer;
+        }
+        if (!satellitePlaceable(state, nb)) {
+          continue;
+        }
+        prev.set(nb, cur);
+        queue.push(nb);
+      }
+    }
+    if (hit === null) {
+      return null;
+    }
+    let node: HexKey | null = hit;
+    while (node !== null) {
+      tree.add(node);
+      remaining.delete(node);
+      node = prev.get(node) ?? null;
+    }
+  }
+  const sats = new Set<HexKey>();
+  for (const h of tree) {
+    if (!planetSet.has(h)) {
+      sats.add(h);
+    }
+  }
+  return sats;
+}
+
+/** 子集枚举的分量数护栏（超出回退 (b) 两两 + (c) 全体，防组合爆炸）。 */
+const MAX_SUBSET_COMPONENTS = 12;
+
+/**
+ * 卫星集最少化后处理（规则"卫星数必须最少"）：TM 启发式按接入顺序选路径，
+ * 可能给出非最少卫星集（如先经 -6,1 接入，错过一格共享的 -6,2 解）。
+ * 逐格试删：删除后星球集仍经"星球+剩余卫星格"连通则删（局部最优贪心）。
+ */
+function minimizeSatellites(
+  state: GameState,
+  planetHexes: HexKey[],
+  sats: Set<HexKey>,
+  forbidden: Set<HexKey>,
+): Set<HexKey> {
+  const result = new Set(sats);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const s of [...result]) {
+      const trial = new Set(result);
+      trial.delete(s);
+      const walkable = new Set<HexKey>([...planetHexes, ...trial]);
+      const seen = new Set<HexKey>([planetHexes[0]!]);
+      const queue: HexKey[] = [planetHexes[0]!];
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        for (const nb of mapNeighbors(state.map, cur)) {
+          if (seen.has(nb) || forbidden.has(nb) || !walkable.has(nb)) {
+            continue;
+          }
+          seen.add(nb);
+          queue.push(nb);
+        }
+      }
+      if (planetHexes.every((h) => seen.has(h))) {
+        result.delete(s);
+        changed = true;
+      }
+    }
+  }
+  return result;
+}
+
+/**
  * 枚举联邦形状（见文件头策略说明）。
  * Ivits 已有联邦时进入扩展模式：候选 = 已有联邦 + 新分量（≥1），
  * pv 阈值为 7X 且按扩展后全联邦建筑计算。
@@ -325,11 +426,55 @@ export function enumerateFederationShapes(state: GameState, idx: PlayerIndex): F
     }
   }
 
-  // (b) 两两合并（Ivits：已有联邦视为第 0 分量）。
+  // (b)+(c) 统一：分量子集枚举（对齐参考引擎 possibleCombinationsForFederations 的
+  // "极小达标组合"）——任意分量子集，pv ≥ 阈值且去掉任一分量即不达标（"不得多用
+  // 星球+卫星"），连通卫星取 Steiner 最少树。曾只做两两合并/全体 MST，漏掉
+  // 3+ 分量的部分合并解（如 4+2+1 三组合，曾致玩家应有联邦时按钮全暗）。
   const groups: HexKey[][] = ivitsExtending ? [baseHexes, ...components] : components;
+  const pvs = groups.map((g, i) => (i === 0 && ivitsExtending ? basePv : componentPv(state, idx, g)));
+  if (groups.length >= 2 && groups.length <= MAX_SUBSET_COMPONENTS) {
+    const n = groups.length;
+    for (let mask = 1; mask < 1 << n; mask++) {
+      if ((mask & (mask - 1)) === 0) continue; // 单分量已在 (a) 处理
+      if (ivitsExtending && (mask & 1) === 0) continue; // Ivits 扩展必含已有联邦
+      let pv = 0;
+      for (let i = 0; i < n; i++) {
+        if (((mask >> i) & 1) === 1) pv += pvs[i]!;
+      }
+      if (pv < threshold) continue;
+      const planetSet = groups.flatMap((g, i) => (((mask >> i) & 1) === 1 ? g : []));
+      const sats = steinerSatellites(state, planetSet, forbidden);
+      if (sats === null) continue;
+      // 极小性（规则书 920-923："不得用超出必需的星球**和**卫星组建联邦——
+      // 若少 1 星球**且**少 1 卫星后联邦仍成立，则必须改"）：形状违规 ⟺
+      // 存在某分量，去掉它之后剩余 pv 仍达标、连通、且卫星**严格更少**。
+      // 桥特例：该分量位于连通要道上（去掉后卫星变多）→ 不多余；
+      // 卫星数相同（只多星球）→ 规则同样允许（对齐参考 isOutclassedBy 的
+      // "星球+卫星都更多才删除"）。Ivits 扩展与原 pairOk 同口径不查；
+      // 已有联邦分量必含，不参与移除。
+      if (!ivitsExtending) {
+        let redundant = false;
+        for (let i = 0; i < n; i++) {
+          if (((mask >> i) & 1) !== 1) continue;
+          if (pv - pvs[i]! < threshold) continue;
+          const restPlanets = groups.flatMap((g, j) => (j !== i && ((mask >> j) & 1) === 1 ? g : []));
+          const restSats = steinerSatellites(state, restPlanets, forbidden);
+          if (restSats !== null && restSats.size < sats.size) {
+            redundant = true;
+            break;
+          }
+        }
+        if (redundant) continue;
+      }
+      push(planetSet, [...minimizeSatellites(state, planetSet, sats, forbidden)]);
+    }
+    return shapes;
+  }
+
+  // ---- 护栏回退（分量数 > MAX_SUBSET_COMPONENTS）：原 (b) 两两 + (c) 全体 MST ----
   const pairOk = (i: number, j: number): boolean => {
-    const pvI = (i === 0 && ivitsExtending ? basePv : componentPv(state, idx, groups[i]!));
-    const pvJ = (j === 0 && ivitsExtending ? basePv : componentPv(state, idx, groups[j]!));
+    const pvI = pvs[i]!;
+    const pvJ = pvs[j]!;
     const total = pvI + pvJ;
     if (total < threshold) {
       return false;
