@@ -12,7 +12,7 @@ import {
   type GameState,
   type HexKey,
 } from '../src/index.js';
-import { actionPhase, legalOf } from './helpers.js';
+import { actionPhase, flushIncome, legalOf } from './helpers.js';
 
 function rig(config: GameConfig, mutate: (s: GameState) => void): GameState {
   const s = structuredClone(actionPhase(config));
@@ -108,10 +108,12 @@ describe('taklons / lantids / nevlas PI', () => {
 });
 
 describe('terrans / itars PI（盖亚阶段 pending）', () => {
-  /** 全员 pass 推进到下一轮，触发盖亚阶段。 */
+  /** 全员 pass 推进到下一轮，触发盖亚阶段（收入若产生 income-order 先冲刷——
+   *  收入顺序决策化后，tokens+charge 的收入会先出 income-order 再到盖亚阶段）。 */
   function passRound(state: GameState): GameState {
     let s = applyAction(state, passActionOf(state));
     s = applyAction(s, passActionOf(s));
+    if (s.pending?.kind === 'income-order') s = flushIncome(s);
     return s;
   }
 
@@ -201,8 +203,6 @@ describe('baltaks / ambas / firaks / bescods', () => {
     const state = rig(cfg('ambas'), (s) => {
       s.players[0]!.buildings.pi = 0;
       const mine = mineHexOf(s, 0);
-      const other = mineHexOf(s, 0); // 起始两矿之一改成 PI 不够，直接找另一格
-      void other;
       // 把一个起始矿改成 PI，保留另一个 mine
       s.map[mine]!.building = { type: 'pi', player: 0 };
     });

@@ -109,6 +109,43 @@ describe('upgrade 费用与 supply', () => {
     expect(next.pending).toEqual({ kind: 'charge', queue: [{ player: 1, amount: 2, vpCost: 1 }] });
   });
 
+  /** 充能邀约手术场景：对手 1 在我矿 2 格内有一个 ts。 */
+  function chargeScenario(mutate?: (s: GameState) => void): GameState {
+    return rig((s) => {
+      s.players[0]!.resources.ore = 10;
+      s.players[0]!.resources.credits = 20;
+      for (const hex of Object.values(s.map)) {
+        if (hex.building?.player === 1) {
+          delete hex.building;
+        }
+      }
+      const hex = mineHexOf(s);
+      const spot = hexesWithin(s.map, hex, 2).find((k) => k !== hex && s.map[k]!.building === undefined)!;
+      s.map[spot]!.building = { type: 'ts', player: 1 };
+      mutate?.(s);
+    });
+  }
+
+  it('终轮已跳过的对手不再收到充能邀约', () => {
+    const state = chargeScenario((s) => {
+      s.round = 6;
+      s.passedPlayers = [1];
+    });
+    const action = upgradesOf(state).find((a) => a.hex === mineHexOf(state) && a.to === 'ts')!;
+    const next = applyAction(state, action);
+    expect(next.pending).toBeNull();
+  });
+
+  it('非终轮已跳过的对手仍收到充能邀约（规则书：跳过后仍可充能）', () => {
+    const state = chargeScenario((s) => {
+      s.round = 3;
+      s.passedPlayers = [1];
+    });
+    const action = upgradesOf(state).find((a) => a.hex === mineHexOf(state) && a.to === 'ts')!;
+    const next = applyAction(state, action);
+    expect(next.pending).toEqual({ kind: 'charge', queue: [{ player: 1, amount: 2, vpCost: 1 }] });
+  });
+
   it('score5/score8 在场时升 ts 得分', () => {
     const state = rig((s) => {
       s.players[0]!.resources.ore = 10;
@@ -194,6 +231,32 @@ describe('升 lab/学院拿科技板', () => {
     expect(p.federationTokens[0]!.flipped).toBe(true);
     expect(next.board.advTechTiles[slot]).toBeNull();
     expect(p.techTiles).toContain('tech8'); // 被覆盖仍持有（失效由 covered 判定）
+  });
+
+  it('高级板+升 L5 双翻面：拿板翻一枚、升 L5 再翻一枚（researchFlipToken）', () => {
+    const state = tsScenario((s) => {
+      const slot = s.board.advTechTiles.findIndex((t) => t !== null);
+      s.players[0]!.research[TRACKS[slot]!] = 4; // 高级板槽位条件
+      s.players[0]!.research.sci = 4; // 升 L5 目标轨
+      s.players[0]!.techTiles.push('tech8');
+      s.players[0]!.federationTokens.push({ id: 'fed2', flipped: false }, { id: 'fed6', flipped: false });
+    });
+    const slot = state.board.advTechTiles.findIndex((t) => t !== null);
+    const advId = state.board.advTechTiles[slot]!;
+    const hex = buildingHexOf(state, 'ts');
+    const action = upgradesOf(state).find(
+      (a) =>
+        a.hex === hex && a.to === 'lab' && a.advTechTile === advId && a.coverTechTile === 'tech8' &&
+        a.flipToken === 'fed2' && a.research === 'sci' && a.researchFlipToken === 'fed6',
+    )!;
+    expect(action).toBeDefined();
+    const next = applyAction(state, action);
+    const p = next.players[0]!;
+    expect(p.research.sci).toBe(5);
+    expect(p.advTechTiles).toContainEqual({ id: advId, covers: 'tech8' });
+    // 两枚标记分别用于拿板与升 L5，全部翻面
+    expect(p.federationTokens.every((t) => t.flipped)).toBe(true);
+    expect(next.board.researchLevel5.sci).toBe(0);
   });
 
   it('无 L4/无可翻标记时不枚举高级板', () => {

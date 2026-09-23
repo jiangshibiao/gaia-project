@@ -1,5 +1,5 @@
 /**
- * WebSocket 传输层 + HTTP 静态托管（M2b，server 包收口）。
+ * WebSocket 传输层 + HTTP 静态托管（server 包收口）。
  *
  * 结构：http.createServer + ws.Server({ noServer })；upgrade 只接受路径 /ws（其余 426）。
  * staticDir 存在时同一 http.Server 托管静态文件（生产单端口：静态 + /ws 共端口；dev 不起

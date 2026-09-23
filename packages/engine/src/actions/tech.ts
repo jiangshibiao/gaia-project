@@ -9,8 +9,8 @@
  *   一块未被覆盖的标准板（被覆盖板失效：收入/触发/被动/特殊格全部失效）；
  *   拿后可升任意轨（参照 reference：adv 位置不锁定升轨）。
  * - 拿板后选择推进 1 级研究（可放弃）；升 L5 规则同 research 行动（翻标记、
- *   每轨限 1 人、nav L5 放 Lost Planet）。
- * - 简化：拿高级板时研究推进不枚举 L5（一次行动需翻两枚标记的场景极罕见）。
+ *   每轨限 1 人、nav L5 放 Lost Planet）。高级板路径允许拿板翻面+升 L5 翻面
+ *   双翻面（researchFlipToken 载荷；翻面池按枚扣减拿板用掉的那枚）。
  */
 import { IllegalActionError } from '../errors.js';
 import type {
@@ -137,15 +137,21 @@ export function enumerateTechTileChoices(
   const covered = coveredTiles(state, idx);
   const coverable = p.techTiles.filter((t) => !covered.has(t));
   const flips = flippableTokenIds(p);
+  // 未翻绿面标记按枚计（flippableTokenIds 去重，同款两枚时拿板耗一枚后仍剩一枚）。
+  const unflipped = p.federationTokens
+    .filter((t) => !t.flipped && FEDERATION_TOKENS[t.id].flippable)
+    .map((t) => t.id);
   state.board.advTechTiles.forEach((tile, slot) => {
     if (tile === null || !advSlotAvailable(state, idx, slot)) {
       return;
     }
-    // 高级板升任意轨；不枚举 L5 推进（见文件头简化说明）。
-    const advances = legalResearchAdvances(state, idx, TRACKS, { allowLevel5: false });
     for (const coverTechTile of coverable) {
       for (const flipToken of flips) {
         out.push({ advTechTile: tile, coverTechTile, flipToken, research: null });
+        // 升轨翻面池 = 全部绿面标记减去拿板用掉的那一枚（拿板+L5 双翻面场景
+        // 存在，L5 推进必须照常枚举，不能简化掉）。
+        const remaining = [...new Set(unflipped.filter((id, i) => !(id === flipToken && unflipped.indexOf(id) === i)))];
+        const advances = legalResearchAdvances(state, idx, TRACKS, { flipTokens: remaining });
         for (const research of advances) {
           out.push({ advTechTile: tile, coverTechTile, flipToken, research });
         }

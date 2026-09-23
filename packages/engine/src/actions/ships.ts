@@ -406,7 +406,12 @@ function payloadFromTechChoice(choice: TechTileChoice): ActionPayload {
   if (research !== null) {
     payload.track = research.track;
     if (research.flipToken !== undefined) {
-      payload.flipToken = research.flipToken;
+      // 高级板路径：L5 翻面是第二枚（researchFlipToken）；标准板路径复用 flipToken。
+      if (choice.advTechTile !== undefined) {
+        payload.researchFlipToken = research.flipToken;
+      } else {
+        payload.flipToken = research.flipToken;
+      }
     }
     if (research.lostPlanetHex !== undefined) {
       payload.lostPlanetHex = research.lostPlanetHex;
@@ -595,8 +600,10 @@ function techChoiceFromPayload(payload?: ActionPayload): TechTileChoice {
   }
   if (payload.track !== undefined) {
     const research: ResearchAdvanceChoice = { track: payload.track };
-    if (payload.flipToken !== undefined) {
-      research.flipToken = payload.flipToken;
+    // 高级板路径 L5 翻面取 researchFlipToken（flipToken 是拿板翻面）；标准板升 L5 复用 flipToken。
+    const rf = choice.advTechTile !== undefined ? payload.researchFlipToken : payload.flipToken;
+    if (rf !== undefined) {
+      research.flipToken = rf;
     }
     if (payload.lostPlanetHex !== undefined) {
       research.lostPlanetHex = payload.lostPlanetHex;

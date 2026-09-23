@@ -76,8 +76,8 @@ export function settleSetupSkips(state: GameState): GameState {
 }
 
 /**
- * 收入顺序待决的自动冲刷（tokens-first 贪心结清）：重放旧对局（行动日志无
- * income-order 记录，当时收入是自动结算的）或任何失同步场景下，非 income-order
+ * 收入顺序待决的自动冲刷（tokens-first 贪心结清）：重放旧对局（行动日志不含
+ * income-order 记录、收入由引擎自动结算）或任何失同步场景下，非 income-order
  * 行动到来前先把遗留的收入决策自动结清。冲刷可能连带跑盖亚阶段（队列空时），
  * 产生的 terrans/itars/tinkering pending 照常留给后续行动响应。
  */
@@ -243,6 +243,18 @@ function dispatch(state: GameState, action: Action, opts?: ApplyOptions): void {
  * IllegalActionError('illegal-action')；opts.assumeLegal 跳过校验。
  */
 export function applyAction(state: GameState, action: Action, opts?: ApplyOptions): GameState {
+  // 重放兼容：旧日志中的 income-order 行动在当前判定（charge > I 区才待决）下
+  // 可能不再对应任何待决——该局面下两序结果一致，作 no-op 跳过是状态等价的
+  // （否则旧日志在当前判定下全部非法、恢复即崩）。
+  if (action.type === 'income-order' && state.pending?.kind !== 'income-order') {
+    return state;
+  }
+  // 重放兼容：旧日志可能留有邀约已不存在的 charge/decline-charge 过期响应，
+  // 作 no-op 跳过（拒绝响应本无状态变更；实时路径由 server actorOf 校验拦截，
+  // 不会误到这里）。
+  if ((action.type === 'charge' || action.type === 'decline-charge') && state.pending?.kind !== 'charge') {
+    return state;
+  }
   const settled = settleTurnHoldSkips(settleIncomeSkips(settleSetupSkips(state), action.type), action);
   if (opts?.assumeLegal !== true) {
     const actor = actorOf(settled, action);

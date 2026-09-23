@@ -86,10 +86,16 @@ export function enumerateGainTechTile(state: GameState, idx: PlayerIndex): Actio
     }
     if (choice.research !== null) {
       a.research = choice.research.track;
-      // 升 L5 的翻面负载（标准板路径 flipToken 挂在 research 选择里；曾丢失导致
-      // 枚举出无 flipToken 的 L5 推进、apply 抛 no-flippable-token——replay 4p seed23 暴露）。
+      // 升 L5 的翻面负载必须随 research 选择携带：标准板路径挂 flipToken，
+      // 缺失会让枚举出无 flipToken 的 L5 推进、apply 抛 no-flippable-token
+      // （枚举与 apply 必须一致，否则重放即崩）。
+      // 高级板路径 L5 翻面是第二枚 → researchFlipToken（flipToken 是拿板翻面）。
       if (choice.research.flipToken !== undefined) {
-        a.flipToken = choice.research.flipToken;
+        if (choice.advTechTile !== undefined) {
+          a.researchFlipToken = choice.research.flipToken;
+        } else {
+          a.flipToken = choice.research.flipToken;
+        }
       }
       if (choice.research.lostPlanetHex !== undefined) {
         a.lostPlanetHex = choice.research.lostPlanetHex;
@@ -107,6 +113,7 @@ export function applyGainTechTile(
     advTechTile?: AdvTechTileId;
     coverTechTile?: TechTileId;
     flipToken?: FederationTokenId;
+    researchFlipToken?: FederationTokenId;
     research?: ResearchTrack | null;
     lostPlanetHex?: HexKey;
     ship?: import('../types.js').ShipId;
@@ -143,8 +150,10 @@ export function applyGainTechTile(
   }
   if (action.research !== undefined && action.research !== null) {
     const research: import('./research.js').ResearchAdvanceChoice = { track: action.research };
-    if (action.flipToken !== undefined) {
-      research.flipToken = action.flipToken;
+    // 高级板路径 L5 翻面取 researchFlipToken（flipToken 是拿板翻面）；标准板升 L5 复用 flipToken。
+    const rf = action.advTechTile !== undefined ? action.researchFlipToken : action.flipToken;
+    if (rf !== undefined) {
+      research.flipToken = rf;
     }
     if (action.lostPlanetHex !== undefined) {
       research.lostPlanetHex = action.lostPlanetHex;

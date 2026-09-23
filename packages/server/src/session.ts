@@ -150,6 +150,27 @@ export class GameSession {
     );
     try {
       for (const { seq, player, action } of listActions(db, gameId)) {
+        // 重放兼容：旧日志中的 income-order 若在当前判定（charge > I 区才待决）下
+        // 当时局面无待决——两序结果本就一致，作 no-op 跳过
+        // （与 engine apply.ts 同款；跳过状态变更但保留日志与 seq 对齐）。
+        if (action.type === 'income-order' && session.gameState.pending?.kind !== 'income-order') {
+          session.actionLog.push({ seq, player, action });
+          session.seq += 1;
+          continue;
+        }
+        // 重放兼容：终轮被跳过的玩家不再收到充能邀约——旧日志中该玩家的
+        // charge/decline-charge 响应在当前局面邀约未生成/队首不符，no-op 跳过
+        // （拒绝响应本就无状态变更；保留日志与 seq 对齐。接受响应理论上分歧，
+        // 但终轮接受=纯亏 VP，实际无人做）。
+        if (action.type === 'charge' || action.type === 'decline-charge') {
+          const chargeActor =
+            session.gameState.pending?.kind === 'charge' ? session.gameState.pending.queue[0]?.player : undefined;
+          if (chargeActor !== player) {
+            session.actionLog.push({ seq, player, action });
+            session.seq += 1;
+            continue;
+          }
+        }
         // turnHold 兼容（旧日志无 confirm-turn 记录）：非持闸玩家行动视同已确认，先自动放闸；
         // 此时免费行动缺省行为人会误归持闸玩家，须注入库中 player 列
         const needInject = session.gameState.turnHold !== null && player !== session.gameState.turnHold;
@@ -267,6 +288,14 @@ export class GameSession {
     let rebuilt = settleSetupSkips(newGame(this.gameState.config));
     const kept: { seq: number; player: PlayerIndex; action: Action }[] = [];
     for (const a of actions.slice(0, lastMyAction)) {
+      // 充能重放兼容（同 restore 循环）：过期 charge/decline-charge 响应 no-op 跳过
+      if (a.action.type === 'charge' || a.action.type === 'decline-charge') {
+        const chargeActor = rebuilt.pending?.kind === 'charge' ? rebuilt.pending.queue[0]?.player : undefined;
+        if (chargeActor !== (a.player as PlayerIndex)) {
+          kept.push({ seq: a.seq, player: a.player as PlayerIndex, action: a.action });
+          continue;
+        }
+      }
       // turnHold 兼容：非持闸玩家行动先放闸，免费行动行为人须注入（同 restore 循环）
       const needInject = rebuilt.turnHold !== null && (a.player as PlayerIndex) !== rebuilt.turnHold;
       if (needInject) {

@@ -220,10 +220,10 @@ describe('合法性框架', () => {
     expect(() => applyAction(state, { type: 'build-mine', hex: '99,99' })).toThrowError(
       expect.objectContaining({ code: 'illegal-action' }) as Error,
     );
-    // 无 pending 时的响应行动同样非法
-    expect(() => applyAction(state, { type: 'charge' })).toThrowError(
-      expect.objectContaining({ code: 'illegal-action' }) as Error,
-    );
+    // 无 pending 时的 charge/decline-charge 是重放兼容 no-op（旧日志可能留有
+    // 邀约已不存在的过期响应；见 apply.ts），不再判非法。
+    const noop = applyAction(state, { type: 'charge' });
+    expect(noop).toBe(state);
     // 第 1 轮 pass 不带助推器（第 6 轮才允许 null）同样非法
     expect(() => applyAction(state, { type: 'pass', booster: null })).toThrowError(
       expect.objectContaining({ code: 'illegal-action' }) as Error,
@@ -241,7 +241,6 @@ describe('盖亚机留置星球的建矿限制', () => {
   /**
    * 规则：盖亚机属 structure，建矿目标必须 "empty (has no structures on it)"——
    * 他人留置的盖亚机所在星球不可建矿；主人建矿时收回盖亚机（免居住费）。
-   * （曾漏检 hex.gaiaformerOf，对手得以在留置盖亚机的绿星上建矿。）
    */
   it('他人盖亚机留置的绿星：枚举排除 + 强行应用抛错；主人可建并收回', () => {
     const state = actionPhase(CONFIG_2P); // terrans(0) vs lantids(1)，seat 0 行动

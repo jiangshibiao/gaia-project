@@ -70,15 +70,17 @@ function incomeCanFullyCharge(p: PlayerState, tokens: number, charge: number): b
 }
 
 /**
- * 收入充能顺序是否需要玩家决策：同时含 token 与充能，且
- * - 充能 > II 区 token 数（充能会碰到 I 区——新 token 参不参与充能才产生差异；
- *   充能 ≤ II 区时两种顺序结果逐点一致，不必打扰玩家）；
- * - 且加完 token 也无法转满（转满则任意顺序结果一致）。
+ * 收入充能顺序是否需要玩家决策：同时含 token 与充能、充能会碰到 II 区
+ * （charge > I 区 token 数；I→II 优先下充能先清 I 区，charge ≤ I 区时新 token
+ * 与 II 区旧 token 的命运与顺序无关）且加完 token 也无法转满（转满则任意顺序一致）。
+ * 注：比较基准必须是 I 区而非 II 区——I→II 优先下链底在 I 区，tokens-first
+ * 的新豆必被卷进链底（charge > I 区时两序不同，如 I0/II4/tokens1/charge4
+ * → (0,2,3) vs (1,0,4)）。
  */
 function incomeOrderNeedsDecision(p: PlayerState, tokens: number, charge: number): boolean {
   if (tokens <= 0 || charge <= 0) return false;
-  const bowl2Tokens = p.power.bowl2 + (p.power.brainstone === 'bowl2' ? 1 : 0);
-  return charge > bowl2Tokens && !incomeCanFullyCharge(p, tokens, charge);
+  const bowl1Tokens = p.power.bowl1 + (p.power.brainstone === 'bowl1' ? 1 : 0);
+  return charge > bowl1Tokens && !incomeCanFullyCharge(p, tokens, charge);
 }
 
 /**

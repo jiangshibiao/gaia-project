@@ -91,10 +91,12 @@ export function legalResearchAdvances(
   state: GameState,
   idx: PlayerIndex,
   tracks: readonly ResearchTrack[],
-  opts?: { allowLevel5?: boolean },
+  opts?: { allowLevel5?: boolean; flipTokens?: FederationTokenId[] },
 ): ResearchAdvanceChoice[] {
   const p = state.players[idx]!;
   const allowL5 = opts?.allowLevel5 !== false;
+  // L5 翻面池：缺省=自己全部绿面标记；拿高级板等已耗一枚的场景由调用方扣减后传入。
+  const flipPool = opts?.flipTokens ?? flippableTokenIds(p);
   const out: ResearchAdvanceChoice[] = [];
   for (const track of tracks) {
     if (trackAdvanceBlocked(p, track)) {
@@ -111,7 +113,7 @@ export function legalResearchAdvances(
     if (!allowL5 || state.board.researchLevel5[track] !== undefined) {
       continue;
     }
-    for (const tokenId of flippableTokenIds(p)) {
+    for (const tokenId of flipPool) {
       if (track === 'nav') {
         for (const c of lostPlanetCandidates(state, idx)) {
           out.push({ track, flipToken: tokenId, lostPlanetHex: c.hex });

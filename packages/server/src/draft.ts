@@ -131,13 +131,15 @@ function refreshAvailable(state: DraftState, pool: readonly FactionId[]): void {
 }
 
 /**
- * 行动后推进：下一行动者 = 从刚行动者下一位起按座位序（环绕）找到的第一个未持有者；
- * 全员持有 → finished，currentActor 置 null。
+ * 行动后推进：下一行动者 = 从刚行动者**在顺位中的下一位**起按顺位（环绕）找到的第一个
+ * 未持有者；全员持有 → finished，currentActor 置 null。
+ * 注意 from 是顺位下标而非座位号——turnOrder 经洗牌后两者不同序，误用座位号
+ * 当下标会跳过未选者、提前 finished。
  */
 function advance(state: DraftState, pool: readonly FactionId[]): void {
   refreshAvailable(state, pool);
   const n = state.turnOrder.length;
-  const from = state.currentActor ?? 0;
+  const from = state.currentActor !== null ? state.turnOrder.indexOf(state.currentActor) : 0;
   for (let step = 1; step < n; step++) {
     const seat = state.turnOrder[(from + step) % n]!;
     if (state.picks[seat] === null) {
@@ -244,15 +246,17 @@ export function applyDraftBid(
   advance(state, pool);
 }
 
-/** draft 结果 → engine GameConfig 片段（须 finished；friendly 出价全 0 → 起始 VP 全 10）。 */
+/** draft 结果 → engine GameConfig 片段（须 finished；friendly 出价全 0 → 起始 VP 全 10）。
+ *  factions/startingVp 按**座位号**索引（GameConfig 约定）——turnOrder 是行动顺序
+ *  而非座位序，按 turnOrder 推入会在洗牌后错配。 */
 export function draftResult(state: DraftState): { factions: FactionId[]; startingVp: number[] } {
   if (!state.finished) {
     throw new DraftError('draft-not-finished', '选族尚未结束，不能开局');
   }
   const factions: FactionId[] = [];
   const startingVp: number[] = [];
-  for (const seat of state.turnOrder) {
-    const pick = state.picks[seat];
+  for (let seat = 0; seat < state.turnOrder.length; seat++) {
+    const pick = state.picks[seat as PlayerIndex];
     if (pick === null || pick === undefined) {
       throw new DraftError('draft-not-finished', `座位 ${seat} 尚未持有种族`);
     }

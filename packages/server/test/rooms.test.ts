@@ -183,7 +183,7 @@ describe('RoomManager', () => {
     );
   });
 
-  it('toRoomState：广播安全视图不含 token 与 seed；lostFleet 缺省 true', () => {
+  it('toRoomState：广播安全视图不含 token；seed 已知时可见；lostFleet 缺省 true', () => {
     const rm = new RoomManager();
     const { room } = rm.createRoom({ playerCount: 2, seed: 42 }, 'alice');
     rm.joinRoom(room.code, 'bob');
@@ -191,8 +191,13 @@ describe('RoomManager', () => {
     expect(state.config).toEqual({ playerCount: 2, lostFleet: true, factionMode: 'random' });
     expect(state.seats[0]).toEqual({ seat: 0, nickname: 'alice', isAI: false, connected: true });
     expect(JSON.stringify(state)).not.toContain('token');
-    expect(JSON.stringify(state.config)).not.toContain('seed');
+    // seed 大厅可见（复现用）：config.seed 已知即下发
+    expect(state.seed).toBe(42);
     expect(state.customSeed).toBe(true);
+    // 未指定 seed 且未开局时 seed 缺省（开局随机落地后可见）
+    const rm2 = new RoomManager();
+    const { room: r2 } = rm2.createRoom({ playerCount: 2 }, 'alice');
+    expect(toRoomState(r2).seed).toBeUndefined();
   });
 
   it('开局前离开（座位清空）：剩余玩家不能开一个含幽灵座位的局', () => {

@@ -1,6 +1,6 @@
 /**
- * 差分对拍（reference/harness）驱动的回归测试：每个在真实对局回放中
- * 发现并修复的引擎 bug 一条用例。覆盖：
+ * 差分对拍（reference/harness）驱动的回归测试：每条用例对应一个真实对局
+ * 回放中发现的引擎分歧。覆盖：
  * 起始资源、ivits 起始 power、setup 无充能、收入板不立即结算、pass 顺序、空碗无邀约、
  * brainstone burn、score1 免费步、terrans 盖亚兑换、共享卫星格、
  * 部分充能 amount、powerFrom、times/brainstone 兑换覆盖、Lost Planet 卫星计数。
@@ -490,7 +490,7 @@ describe('LF：船上科技板 count 模型（每名玩家可拿 1 份）', () =
     const ship = next.board.ships.find((x) => x.id === 'rebellion')!;
     expect(ship.techTiles).toEqual(['techlf2']); // 板仍留船上
     expect(ship.techTileClaims).toEqual([0]);
-    // 玩家 1（回合已推进到 1）经升级拿板上同一块（旧的 splice 模型会把板拿走、拒绝第二次）
+    // 玩家 1（回合已推进到 1）经升级拿板上同一块（板留船上，可被多名玩家先后拿取）
     const labHex = (Object.keys(next.map) as HexKey[]).find(
       (k) => next.map[k]!.building?.type === 'lab' && next.map[k]!.building.player === 1,
     )!;

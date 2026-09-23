@@ -98,11 +98,13 @@ export function drawFactions(seed: number, playerCount: number, lostFleet: boole
   return rng.shuffle([...pool]).slice(0, playerCount);
 }
 
-/** 广播安全视图：剥掉 token 与 config.seed（防泄露种子），只留协议 RoomState 字段。 */
+/** 广播安全视图：剥掉 token；seed 在已知时下发（大厅可见以便复现——
+ *  开局前 = config.seed（房主指定时），startGame/draft 落地后 = room.seed）。 */
 export function toRoomState(room: Room): RoomState {
+  const seed = room.seed ?? room.config.seed;
   return {
     code: room.code,
-    // config 显式重建：含 lostFleet/aiSeats/factionMode（大厅展示），绝不含 seed 值
+    // config 显式重建：含 lostFleet/aiSeats/factionMode（大厅展示），seed 走独立字段
     config: {
       playerCount: room.config.playerCount,
       lostFleet: room.config.lostFleet ?? true,
@@ -112,6 +114,7 @@ export function toRoomState(room: Room): RoomState {
         : {}),
     },
     customSeed: room.customSeed,
+    ...(seed !== undefined ? { seed } : {}),
     seats: room.seats.map((s) =>
       s === null ? null : { seat: s.seat, nickname: s.nickname, isAI: s.isAI, connected: s.connected },
     ),

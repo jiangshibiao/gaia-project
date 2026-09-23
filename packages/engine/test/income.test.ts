@@ -47,7 +47,8 @@ describe('收入充能顺序（income-order）', () => {
     expect(bowls(cf)).toEqual([1, 0, 2]);
   });
 
-  it('充能 ≤ II 区（顺序结果一致）→ 自动结算不待决', () => {
+  it('充能不超 I 区（charge ≤ I 区 token；顺序结果一致）→ 自动结算不待决', () => {
+    // I=4 充 4：charge 全落 I 区，新 token 与 II 区旧 token 命运与顺序无关。
     const s = rigIncome((x) => {
       x.players[0]!.power.bowl1 = 4;
       x.players[0]!.power.bowl2 = 4;
@@ -57,6 +58,21 @@ describe('收入充能顺序（income-order）', () => {
     expect(s.players[0]!.power.bowl1).toBe(1); // I=5 充 4 → 余 1
     expect(s.players[0]!.power.bowl2).toBe(8); // I→II 4 个
     expect(s.players[0]!.power.bowl3).toBe(0);
+  });
+
+  it('充能 > I 区且无法转满（两序分布不同）→ 待决', () => {
+    const s = rigIncome((x) => {
+      x.players[0]!.power.bowl1 = 0;
+      x.players[0]!.power.bowl2 = 4;
+      x.players[0]!.power.bowl3 = 0;
+    });
+    expect(s.pending).toEqual({ kind: 'income-order', player: 0, tokens: 1, charge: 4 });
+    // tokens-first：I=1 充 4 → I→II 1 个、II→III 3 个
+    const tf = flushIncome(applyAction(s, { type: 'income-order', order: 'tokens-first' }));
+    expect(bowls(tf)).toEqual([0, 2, 3]);
+    // charge-first：II 4 个全转 III，token 后落 I 区
+    const cf = flushIncome(applyAction(s, { type: 'income-order', order: 'charge-first' }));
+    expect(bowls(cf)).toEqual([1, 0, 4]);
   });
 
   it('加完 token 能转满 → 自动全推 III 不待决', () => {

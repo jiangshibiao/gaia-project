@@ -613,6 +613,8 @@ export type MainAction =
       coverTechTile?: TechTileId;
       /** 翻面的绿面联邦标记（拿高级板必翻；标准板升 L5 时为 L5 翻面）。 */
       flipToken?: FederationTokenId;
+      /** 高级板路径专属：拿板后升 L5 的第二枚翻面（拿板翻面=flipToken）。 */
+      researchFlipToken?: FederationTokenId;
       /** 拿板后选择推进的研究轨；null/缺省=不推进。 */
       research?: ResearchTrack | null;
       /** 拿板升轨恰好到 nav L5 时的 Lost Planet 放置格。 */
@@ -656,6 +658,8 @@ export interface ActionPayload {
   coverTechTile?: TechTileId;
   federationToken?: FederationTokenId;
   flipToken?: FederationTokenId;
+  /** 高级板路径专属：拿板后升 L5 的第二枚翻面（拿板翻面=flipToken）。 */
+  researchFlipToken?: FederationTokenId;
   /** 研究推进恰好到 nav L5 时的 Lost Planet 放置格。 */
   lostPlanetHex?: HexKey;
   /** ship-range3/gleens-range：以临时射程探索的飞船；ship-tech-tile 等：从该船拿标准板。 */
@@ -758,6 +762,8 @@ export type ResponseAction =
       advTechTile?: AdvTechTileId;
       coverTechTile?: TechTileId;
       flipToken?: FederationTokenId;
+      /** 高级板路径专属：拿板后升 L5 的第二枚翻面（拿板翻面=flipToken）。 */
+      researchFlipToken?: FederationTokenId;
       research?: ResearchTrack | null;
       lostPlanetHex?: HexKey;
       ship?: ShipId;

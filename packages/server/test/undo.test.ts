@@ -149,7 +149,7 @@ describe('GameSession.undo', () => {
     expect(stableStringify(restored!.state)).toBe(stableStringify(sess.state));
   });
 
-  it('开局归一化：LF 新族在 seat 0 时会话创建即跳过空枚举队首（曾开局死锁）', () => {
+  it('开局归一化：LF 新族在 seat 0 时会话创建即跳过空枚举队首', () => {
     const db: Db = openDb(':memory:');
     const config: GameConfig = {
       playerCount: 4,

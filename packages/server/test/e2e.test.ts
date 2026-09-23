@@ -1,5 +1,5 @@
 /**
- * 服务器端到端（ws 级对局，M2b 验收）。
+ * 服务器端到端（ws 级对局）。
  *
  * 2 个真实 ws 客户端（真人）+ 2 个 AI 座位（agentFactoryFromSpec('builtin:random')，
  * GAIA_AI_PACE_MS=0 → aiPaceMs: 0）：建房 → 加入 → 开局 → 真人互打到 setup 结束

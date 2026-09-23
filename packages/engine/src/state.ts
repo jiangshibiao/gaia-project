@@ -84,11 +84,10 @@ export function spendablePower(p: PlayerState): number {
 }
 
 /**
- * 充能：**I→II 优先**——必须先把 I 区 token 全部推入 II 区，I 区空了才 II→III。
+ * 充能：**I→II 优先**——必须先把 I 区 token 全部推入 II 区，I 区空了才 II→III
+ * （刻意选择：II→III 优先连跳（III 最大化）违反玩家直觉，勿改）。
  * brainstone 约定：普通 token 先动，brainstone 最后动。
- * （用户明确口径："魔力必须是 1 全转完 2 才能 2 转 3"——曾短暂改成 II→III
- * 优先连跳（III 最大化），玩家实战反馈违反直觉已回退；收入阶段的"先拿豆/
- * 先转魔力"顺序由玩家自定（income-order pending），与充能口径无关。）
+ * 收入阶段的"先拿豆/先转魔力"顺序由玩家自定（income-order pending），与此无关。
  */
 export function chargePower(p: PlayerState, amount: number): number {
   const pw = p.power;

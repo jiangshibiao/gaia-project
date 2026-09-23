@@ -127,7 +127,12 @@ function upgradeActionWithChoice(
   const research: ResearchAdvanceChoice | null = choice.research;
   action.research = research === null ? null : research.track;
   if (research !== null && research.flipToken !== undefined) {
-    action.flipToken = research.flipToken;
+    // 高级板路径：L5 翻面是第二枚（researchFlipToken）；标准板路径复用 flipToken（重放兼容）。
+    if (choice.advTechTile !== undefined) {
+      action.researchFlipToken = research.flipToken;
+    } else {
+      action.flipToken = research.flipToken;
+    }
   }
   if (research !== null && research.lostPlanetHex !== undefined) {
     action.lostPlanetHex = research.lostPlanetHex;
@@ -258,9 +263,10 @@ function applyUpgradeTechTile(
     if (action.lostPlanetHex !== undefined) {
       research.lostPlanetHex = action.lostPlanetHex;
     }
-    // 标准板升 L5 的翻面标记复用 flipToken 字段。
-    if (action.flipToken !== undefined) {
-      research.flipToken = action.flipToken;
+    // 高级板路径 L5 翻面取 researchFlipToken（flipToken 是拿板翻面）；标准板升 L5 复用 flipToken。
+    const rf = action.advTechTile !== undefined ? action.researchFlipToken : action.flipToken;
+    if (rf !== undefined) {
+      research.flipToken = rf;
     }
     choice.research = research;
   }

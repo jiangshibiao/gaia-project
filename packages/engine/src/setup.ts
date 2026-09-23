@@ -139,7 +139,8 @@ export function newGame(config: GameConfig): GameState {
     // setup 期间以 setupQueue 队首为准；进入行动阶段后由 advanceSetup 置为 firstPlayer。
     currentPlayerIdx: 0,
     passedPlayers: [],
-    firstPlayer: 0,
+    // 第 1 轮先手 = turnOrder 首位（turnOrder 可洗牌，不能硬编码 0）。
+    firstPlayer: turnOrder[0]!,
     map,
     players,
     board,

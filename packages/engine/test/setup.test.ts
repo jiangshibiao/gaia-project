@@ -62,9 +62,11 @@ describe('确定性', () => {
     const s = newGame({ ...CONFIG_2P, turnOrder: [1, 0] });
     expect(s.turnOrder).toEqual([1, 0]);
     expect(s.setupQueue[0]).toBe(1);
+    expect(s.firstPlayer).toBe(1); // 第 1 轮行动权归 turnOrder 首位
     expect(s.config.turnOrder).toEqual([1, 0]);
     const d = newGame(CONFIG_2P);
     expect(d.turnOrder).toEqual([0, 1]);
+    expect(d.firstPlayer).toBe(0);
     expect(d.config.turnOrder).toBeUndefined();
     expect(() => newGame({ ...CONFIG_2P, turnOrder: [0, 0] })).toThrow(IllegalActionError);
     expect(() => newGame({ ...CONFIG_2P, turnOrder: [0, 1, 2] })).toThrow(IllegalActionError);
@@ -311,7 +313,7 @@ describe('setup 队列', () => {
     expect(s.lastEvents).toContain('setup-complete');
   });
 
-  it('开局归一化：LF 新族/ivits 在 seat 0 时 settleSetupSkips 跳过空枚举队首（曾开局死锁）', () => {
+  it('开局归一化：LF 新族/ivits 在 seat 0 时 settleSetupSkips 跳过空枚举队首（否则开局死锁）', () => {
     // darkanians 在 seat 0：mines-1/2 阶段无放置（无母星），枚举为空
     const s = newGame({
       playerCount: 4,

@@ -51,6 +51,9 @@ function playersClockwiseFrom(state: GameState, actor: PlayerIndex): PlayerIndex
  * 建矿/升级/盖亚建矿/Lost Planet 放置均经此生成。
  * 无 token 可充的玩家不生成邀约（参考引擎 canLeech：chargePower(1) 模拟；
  * taklons 已建 PI 例外——只为拿 PI 的 +1 token 也可接受邀约）。
+ * **终轮已跳过的玩家不生成邀约**：规则书虽允许跳过后充能，但终轮跳过后
+ * 魔力不再有任何价值、接受=纯亏 VP，必然拒绝——直接跳过。有意偏离参考引擎；
+ * 重放兼容见 server session restore/undo 循环的过期响应跳过。
  */
 export function makeChargeOffers(
   state: GameState,
@@ -60,6 +63,10 @@ export function makeChargeOffers(
   const offers: ChargeOffer[] = [];
   const near = hexesWithin(state.map, hexKey, 2);
   for (const j of playersClockwiseFrom(state, actor)) {
+    const pj = state.players[j]!;
+    if (state.passedPlayers.includes(j) && state.round >= 6) {
+      continue;
+    }
     let maxPv = 0;
     for (const h of near) {
       const hex = state.map[h]!;
@@ -74,10 +81,9 @@ export function makeChargeOffers(
     if (maxPv === 0) {
       continue;
     }
-    const p = state.players[j]!;
     const chargeable =
-      p.power.bowl1 + p.power.bowl2 + (p.power.brainstone === 'bowl1' || p.power.brainstone === 'bowl2' ? 1 : 0);
-    const taklonsPi = p.faction === 'taklons' && p.buildings.pi === 0;
+      pj.power.bowl1 + pj.power.bowl2 + (pj.power.brainstone === 'bowl1' || pj.power.brainstone === 'bowl2' ? 1 : 0);
+    const taklonsPi = pj.faction === 'taklons' && pj.buildings.pi === 0;
     if (chargeable === 0 && !taklonsPi) {
       continue;
     }
@@ -88,8 +94,9 @@ export function makeChargeOffers(
 
 /**
  * charge / decline-charge 响应（原地修改）。
- * charge：接受 queue[0] 邀约，付 vpCost（vp 不足时按可付的最大充——VP 不能为负），
- * chargePower 实际充入（碗容量不足部分作废），弹队列；空则 pending=null。
+ * charge：接受 queue[0] 邀约，VP 代价 = 实际充入量−1（封顶取小：邀约量、VP 可付量、
+ * 实际可充 token 数——可充不足时按实际数量计，不白亏 VP；taklons PI 先 +1 token 计入），
+ * chargePower 实际充入，弹队列；空则 pending=null。
  * amount（harness 对拍覆盖）：部分接受量，缺省=邀约全量；vp 代价 = amount-1。
  * 回合推进由 apply 层在 pending 清空后统一处理。
  */
@@ -104,16 +111,21 @@ export function applyChargeResponse(state: GameState, accept: boolean, amount?: 
   }
   if (accept) {
     const p = player(state, offer.player);
-    // VP 不能为负：vp 不足 vpCost 时按可付的最大量充（amount = vp+1 时 cost = vp）。
+    // 接受量取小：邀约量、VP 可付量（VP 不能为负）。实际充入由 chargePower 按可充
+    // token 数自封顶；**VP 代价 = 实际充入量−1**——可充 < 邀约量时按实际充入计费，
+    // 不按邀约全量扣（白亏 VP）。token 移动量不受计费口径影响，重放兼容。
+    const taklonsPi = p.faction === 'taklons' && p.buildings.pi === 0;
     const effective = Math.min(amount ?? offer.amount, p.vp + 1);
     // taklons PI：被动充能时 +1 power token。规则允许自选先充能或先拿 token，
     // 固定为"先拿 token 再充能"（token 入 I 区后可能随即被充走，与先拿一致的最常见选择）。
-    if (effective > 0 && p.faction === 'taklons' && p.buildings.pi === 0) {
+    if (effective > 0 && taklonsPi) {
       gainPowerTokens(p, 1);
     }
     if (effective > 0) {
-      p.vp -= effective - 1;
-      chargePower(p, effective);
+      const charged = chargePower(p, effective);
+      if (charged > 0) {
+        p.vp -= charged - 1;
+      }
     }
   }
   pending.queue.shift();

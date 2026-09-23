@@ -1130,7 +1130,7 @@ describe('LF 新种族', () => {
     expect(after3.pending).toBeNull();
   });
 
-  it('gain-tech-tile 升 L5 携带 flipToken（枚举↔apply 一致性回归：曾丢失抛 no-flippable-token）', () => {
+  it('gain-tech-tile 升 L5 携带 flipToken（枚举↔apply 一致性回归）', () => {
     const state = rig((s) => {
       s.players[0]!.research.nav = 4;
       s.players[0]!.federationTokens.push({ id: 'fedlf2', flipped: false });

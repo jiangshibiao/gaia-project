@@ -2,7 +2,7 @@
  * draft（种族选取）阶段 e2e：ws 级两客户端。
  * - friendly：start_game 进 draft → 按座位序锁定 → 全员就绪 → draft_confirm 开局；
  * - auction：选空闲族 + 一次抬价挤人 → confirm 后起始 VP = 10 − 出价（引擎已结算）；
- * - random：不进入 draft（现状回归锚定）；
+ * - random：不进入 draft，直接开局；
  * - friendly + AI 座位：AI 自动选族，真人确认即可开局。
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -123,7 +123,7 @@ describe('e2e: draft 种族选取', () => {
     expect(snap.state.players.map((p: { vp: number }) => p.vp)).toEqual([10, 8]);
   });
 
-  it('random：不进入 draft，直接开局（现状回归）', async () => {
+  it('random：不进入 draft，直接开局', async () => {
     const { a } = await setupRoom('random');
     a.c.send({ type: 'start_game', protocolVersion: PV, token: a.token });
     const started = await a.c.nextMessage('room_state', (m) => m.room.started === true);

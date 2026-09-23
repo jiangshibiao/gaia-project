@@ -1,5 +1,5 @@
 /**
- * @gaia/protocol — 客户端/服务器协议契约（M2b）。
+ * @gaia/protocol — 客户端/服务器协议契约。
  *
  * 与 Brass 的关键差异：
  * - 盖亚无隐藏信息：FilteredState 仅剥 rngState（见 filter.ts）；
@@ -67,7 +67,7 @@ export interface AISeatConfig {
 /**
  * 种族选取方案（开局前 RoomConfig.factionMode，缺省 'random'）：
  * - friendly：按座位顺序交互式选族，每人锁定一个未被选取的种族，其他人可见；
- * - random：开局时服务器按 seed 随机分配（现状）；
+ * - random：开局时服务器按 seed 随机分配；
  * - auction：竞技竞拍（gaia-project.io BidWhileChoosing）——选空闲族出价 0 持有，
  *   或对已被持有的族出更高价挤走原持有者，起始 VP = 10 − 出价。
  */
@@ -97,11 +97,13 @@ export interface SeatInfo {
   connected: boolean;
 }
 
-/** customSeed：client 供 seed 时 true（公开标记）；广播 config 不含 seed 值。 */
+/** customSeed：client 供 seed 时 true（公开标记）；seed：生效种子（房主指定或开局时
+ *  服务器随机落地后）——大厅可见以便复现（本地友好局，公开地图本就全知）。 */
 export interface RoomState {
   code: string;
   config: RoomConfig;
   customSeed: boolean;
+  seed?: number;
   seats: (SeatInfo | null)[];
   started: boolean;
   /** true = 房间处于 draft（种族选取）阶段（friendly/auction；选族状态走 draft_state 消息）。 */

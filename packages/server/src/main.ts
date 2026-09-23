@@ -4,7 +4,7 @@
  *
  * AI 座位：ANTHROPIC_API_KEY 存在时经 AnthropicClient 构造 LLMAgent（按座位难度，
  * GAIA_AI_MODEL 可覆盖默认模型）；缺失 → GAIA_AI_SPEC 选择插件（缺省
- * DEFAULT_SPEC=builtin:heuristic，可选见 listAgentPlugins），不产生 LLM 调用。
+ * DEFAULT_SPEC，可选见 listAgentPlugins），不产生 LLM 调用。
  * GAIA_AI_PACE_MS 控制每步 AI 行动间隔（默认 300ms，0 = 不减速）。
  */
 import { existsSync } from 'node:fs';
@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     options.aiAgentFactory = (_seat, difficulty) => new LLMAgent(client, difficulty);
     aiDesc = `llm（模型按难度，GAIA_AI_MODEL=${process.env['GAIA_AI_MODEL'] ?? '默认'}）`;
   } else {
-    // 插件式 AI（agents/ 单文件注册制）：GAIA_AI_SPEC 选择，缺省 builtin:heuristic
+    // 插件式 AI（agents/ 单文件注册制）：GAIA_AI_SPEC 选择，缺省 DEFAULT_SPEC
     const spec = process.env['GAIA_AI_SPEC'] || DEFAULT_SPEC;
     console.warn(
       `[gaia] ANTHROPIC_API_KEY 未设置：AI 座位用内置插件 ${spec}，不产生 LLM 调用`,

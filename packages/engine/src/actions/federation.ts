@@ -17,14 +17,14 @@
  * - 结算：hex.federations 登记（星球+卫星）、拿标记（绿面、立即得奖励）、
  *   触发 onFederationFormed（score4 +5vp）。
  *
- * 枚举策略（2026-09-21 重写；对齐参考引擎 possibleCombinationsForFederations）：
+ * 枚举策略（对齐参考引擎 possibleCombinationsForFederations）：
  * 对玩家未入联邦的已殖民星球按邻接聚成连通分量，枚举
  * (a) 每个 pv 达标且满足相邻约束的单分量联邦；
  * (b) 分量子集枚举（≤12 分量）：pv ≥ 阈值且**极小**（去掉任一分量即不达标，
  *     = "不得多用星球+卫星"），连通卫星取 Steiner 最少树（TM 启发式，
  *     路径共享格只计 1 颗，与参考引擎 spanningTree heuristic 同型）；
- * (c) 分量数 >12 时回退：两两合并 + 全体 MST（原策略，护栏防爆）。
- * 更早版本只做两两合并/全体 MST，漏掉 3+ 分量部分合并解（曾致应有联邦时按钮全暗）。
+ * (c) 分量数 >12 时回退：两两合并 + 全体 MST（护栏防爆）。
+ * 只做两两合并/全体 MST 会漏掉 3+ 分量部分合并解，故 (b) 必须枚举子集。
  */
 import { IllegalActionError } from '../errors.js';
 import type { Action, FederationTokenId, FreeMineOptions, GameState, PlayerIndex, PowerAreaAmounts } from '../types.js';
@@ -428,8 +428,8 @@ export function enumerateFederationShapes(state: GameState, idx: PlayerIndex): F
 
   // (b)+(c) 统一：分量子集枚举（对齐参考引擎 possibleCombinationsForFederations 的
   // "极小达标组合"）——任意分量子集，pv ≥ 阈值且去掉任一分量即不达标（"不得多用
-  // 星球+卫星"），连通卫星取 Steiner 最少树。曾只做两两合并/全体 MST，漏掉
-  // 3+ 分量的部分合并解（如 4+2+1 三组合，曾致玩家应有联邦时按钮全暗）。
+  // 星球+卫星"），连通卫星取 Steiner 最少树。只做两两合并/全体 MST 会漏掉
+  // 3+ 分量的部分合并解（如 4+2+1 三组合），必须枚举子集。
   const groups: HexKey[][] = ivitsExtending ? [baseHexes, ...components] : components;
   const pvs = groups.map((g, i) => (i === 0 && ivitsExtending ? basePv : componentPv(state, idx, g)));
   if (groups.length >= 2 && groups.length <= MAX_SUBSET_COMPONENTS) {
@@ -471,7 +471,7 @@ export function enumerateFederationShapes(state: GameState, idx: PlayerIndex): F
     return shapes;
   }
 
-  // ---- 护栏回退（分量数 > MAX_SUBSET_COMPONENTS）：原 (b) 两两 + (c) 全体 MST ----
+  // ---- 护栏回退（分量数 > MAX_SUBSET_COMPONENTS）：两两合并 + 全体 MST ----
   const pairOk = (i: number, j: number): boolean => {
     const pvI = pvs[i]!;
     const pvJ = pvs[j]!;
