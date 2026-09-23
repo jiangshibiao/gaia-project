@@ -185,7 +185,7 @@ function nearbyGroupPv(ctx: EvalCtx, hexKey: HexKey, extraPv: number): number {
 }
 
 /** 联邦组价值（凸形）：(min(pv,7)/7)²×weight——组越接近 7 电拉力越强。 */
-function fedGroupValue(pv: number, weight: number): number {
+export function fedGroupValue(pv: number, weight: number): number {
   const t = Math.min(pv, 7) / 7;
   return t * t * weight;
 }
@@ -196,7 +196,7 @@ function fedGroupValue(pv: number, weight: number): number {
  * #2/#3）；分量超过 7 还贴建 = 浪费电力密度，且大分量合并时一个联邦吃掉
  * 所有建筑，毁掉其他潜在外援联邦。
  */
-function fedComponentValue(pv: number, weight: number): number {
+export function fedComponentValue(pv: number, weight: number): number {
   if (pv <= 7) return fedGroupValue(pv, weight);
   return fedGroupValue(7, weight) - (pv - 7) * 2;
 }
@@ -209,13 +209,29 @@ interface OwnComponents {
 /**
  * 己方建筑（未入联邦）的邻接连通分量（联邦形状的原子单位——引擎枚举按整个
  * 分量合并，所以"贴大"和"合并"都会毁掉潜在外援联邦）。additionalMine 计 pv1。
+ * excludeFedAdjacent：把已入联邦格的**邻格**也排除（禁入区——这些建筑再也
+ * 进不了新联邦；叶估值的联邦潜力用，行动级凑组在 nearbyGroupPv 单独排除）。
  */
-function ownComponents(state: GameState, seat: PlayerIndex): OwnComponents {
+export function ownComponents(
+  state: GameState,
+  seat: PlayerIndex,
+  opts?: { excludeFedAdjacent?: boolean },
+): OwnComponents {
   const ownSet = new Set<HexKey>();
   for (const [key, hex] of Object.entries(state.map)) {
     if (hex.federations.includes(seat)) continue;
     if (hex.building?.player === seat || hex.additionalMine === seat) {
       ownSet.add(key as HexKey);
+    }
+  }
+  if (opts?.excludeFedAdjacent === true) {
+    for (const key of [...ownSet]) {
+      for (const nb of mapNeighbors(state.map, key)) {
+        if (state.map[nb]?.federations.includes(seat) === true) {
+          ownSet.delete(key);
+          break;
+        }
+      }
     }
   }
   const compOf = new Map<HexKey, number>();
@@ -329,7 +345,11 @@ function scoreBuildMine(ctx: EvalCtx, hexKey: HexKey): number {
   if (t.asteroid) s -= cfg.asteroidPenalty;
   // 联邦凑组（连通分量感知）：贴单分量给凸形（超 8 惩罚贴大），合并多分量
   // 重罚（毁掉多个潜在外援联邦），全新种子按 2 格桥接潜力半价。乘阶段倍率。
-  const clusterMult = ctx.cfg.phase[ctx.phase].clusterMult;
+  // 联邦缺口期（held < target−1）簇拉力加成——联邦数朝 targetCount 推进。
+  const fedDeficit = Math.max(0, ctx.cfg.federation.targetCount - 1 - ctx.me.federationTokens.length);
+  const clusterMult =
+    ctx.cfg.phase[ctx.phase].clusterMult *
+    (1 + fedDeficit * ctx.cfg.federation.deficitClusterBoost);
   const comps = ownComponents(ctx.state, ctx.seat);
   const touching = touchingComponents(comps, ctx.state, hexKey);
   if (touching.size === 0) {
@@ -452,10 +472,12 @@ function scoreFormFederation(
   s += cfg.perHex * action.hexes.length;
   s -= cfg.satelliteCost * action.satellites.length;
   s += cfg.satelliteProgress * action.satellites.length;
-  // 第 3 联邦是获胜底线（社区共识）；LF 环境整体分数更高，第 4 个也给一半奖励。
+  // 第 targetCount 联邦是获胜底线（社区共识）；LF 环境整体分数更高，超出
+  // 目标后再多一个也给一半奖励。
   const held = ctx.me.federationTokens.length;
-  if (held === 2) s += cfg.thirdBonus;
-  else if (held === 3 && ctx.variant === 'lostFleet') s += cfg.thirdBonus / 2;
+  const target = ctx.cfg.federation.targetCount;
+  if (held === target - 1) s += cfg.thirdBonus;
+  else if (held >= target && ctx.variant === 'lostFleet') s += cfg.thirdBonus / 2;
   return s;
 }
 
@@ -696,6 +718,10 @@ function scoreExploreShip(ctx: EvalCtx): number {
   const p = ctx.me;
   const vpCost = p.faction === 'baltaks' ? EXPLORE_SHIP_COST_VP_BALTAKS : EXPLORE_SHIP_COST_VP;
   let s = ctx.cfg.explore.valuePerRoundLeft * ctx.roundsLeft - vpCost;
+  // 前期上飞船优先：首船全额 earlyBonus×roundsLeft/5，
+  // 第 2 艘减半、第 3 艘 1/4——早上船早解锁行动格/舰载板/第 7 高级槽。
+  const shipOrderMult = p.shuttles.length === 0 ? 1 : p.shuttles.length === 1 ? 0.5 : 0.25;
+  s += ctx.cfg.explore.earlyShipBonus * Math.min(1, ctx.roundsLeft / 5) * shipOrderMult;
   if (p.faction === 'nevlas' || p.faction === 'itars' || p.faction === 'taklons') {
     s -= ctx.cfg.explore.factionPenalty;
   }

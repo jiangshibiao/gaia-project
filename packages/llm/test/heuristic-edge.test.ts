@@ -51,8 +51,8 @@ describe('边界场景棋理', () => {
   });
 
   it('L5 研究：必带翻面标记，且优先翻低价值标记（fed6 先于 fed2）', () => {
-    // 定向构造（2026-09-21 起不再依赖随机命中——联邦枚举变全后随机对局
-    // 研究进度被稀释，L5+flipToken 场景系统性消失）：主阶段手术 sci L4 +
+    // 定向构造（随机对局难以命中——联邦枚举全量后研究进度被稀释，L5+flipToken
+    // 场景系统性消失）：主阶段手术 sci L4 +
     // 未翻绿面标记 + 充足知识 → L5 枚举个数 >0 且全部带 flipToken；最佳 L5 > 裸 pass。
     const { state: base, actor } = playUntil((s) => s.phase === 'action');
     const state = structuredClone(base);

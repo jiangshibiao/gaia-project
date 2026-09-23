@@ -1,5 +1,5 @@
 /**
- * LLMAgent——M3 决策链：预筛 → LLM 选择 → 校验 → 重试一次 → 启发式降级。
+ * LLMAgent 决策链：预筛 → LLM 选择 → 校验 → 重试一次 → 启发式降级。
  *
  * decide(state, seat, legal) 流程（座位在参数上，不绑构造，与 DecidingAgent
  * 契约一致；返回的 action 恒来自调用方给的 legal 集）：

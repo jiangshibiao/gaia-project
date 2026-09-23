@@ -39,12 +39,15 @@ GET /gamepanel/gamepanel/getRanking.html?game=1495&mode=elo&start=0,10,20,…
 ```
 GET /gamestats/gamestats/getGames.html?player=<pid>&game_id=1495&finished=1&updateStats=0&page=N
 → {"status":1,"data":{"tables":[{"table_id","players"(逗号id),"player_names","scores",
-   "start","end","normalend",…}]}}
+   "start","end","normalend","arena_win","arena_after",…}]}}
 ```
 - **`player` 是必填**（不带 player 按游戏枚举：实测 400 `Failed to get mandatory
   argument: player`）。全站枚举只能 排行榜→逐个玩家历史。
 - 翻页：`page` 递增直到空或不足一页（10/页）。顶部玩家每人 300-600 桌。
 - `normalend`："1"=正常结束（否则弃局/超时）。
+- **`arena_win`/`arena_after` 非空 = Arena（竞技赛季）桌**——锦标赛/竞技标签免费
+  附带，无需 tableinfos；锦标赛（th_name）只在 tableinfos 的 player 里。
+  日志拉取优先级：锦标赛 > Arena > LF > 4p > 2p > 3p（用户口径：锦标赛数据最好）。
 
 ### 3) 桌元数据（人数/选项/ELO/结束原因）
 
@@ -99,6 +102,9 @@ packet 结构：
 ## 与本项目的数据衔接
 
 - 蒸馏 `data/bga/tables.jsonl`：`{"id","d","pc","p":[[名字,分数,ELO]…],"lf"?,"ne"?}`。
+- `bga-analyze.ts`：日志统计（联邦/建造/研究/上船分布，校准 AI 估价）。
+  **行动编号按规则书口径**：notifyAction 的 actionId 11=探索飞船、12=检视神器
+  （1-10 为研究板行动格，13+ 为科技/特殊行动）；事件里没有独立 shuttle 类型。
 - BGA 日志是 UI 级事件流（盖亚插件自定义 type + args），与本项目引擎的 Action 空间
   **不同构**——做统计级分析（终分/联邦数/开局偏好/ELO 分布），不做逐行动对拍。
   转化到引擎可重放的行动序列需要写 args→Action 的映射层（工作量中等，暂不做）。

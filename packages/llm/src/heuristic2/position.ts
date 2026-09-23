@@ -4,9 +4,9 @@
  * 组成（全部 VP 等值）：已入账 vp + 库存资源×阶段权重 + 总收入 NPV +
  * 研究轨里程碑 + 持有片折算 + 联邦重结算期望 + 终局零和位次期望。
  *
- * 注意：库存/收入/里程碑与行动评分存在口径重叠——bench 消融证明保留重叠
- * 的"富"叶估值显著优于去重版（候选间比较需要的是位置好坏的完整排序，
- * 而非增量归因；leafWeight 1.2 时去重版 −9 分）。重叠不是 bug，是特性。
+ * 注意：库存/收入/里程碑与行动评分存在口径重叠——刻意保留："富"叶估值
+ * 显著优于去重版（候选间比较需要的是位置好坏的完整排序，而非增量归因；
+ * leafWeight 1.2 时去重版 −9 分）。重叠不是 bug，是特性。
  */
 import {
   BOOSTERS,
@@ -16,13 +16,9 @@ import {
   RESEARCH_TRACKS,
   TECH_TILES,
   ADV_TECH_TILES,
-  buildingPowerValue,
   finalCount,
-  hexesWithin,
-  mapNeighbors,
   type FinalCondition,
   type GameState,
-  type HexKey,
   type PlayerIndex,
   type PlayerState,
   type ResearchTrack,
@@ -31,6 +27,7 @@ import {
 import type { Cfg, DeepPartial } from './cfg.js';
 import type { EvalCtx } from './context.js';
 import { evalCtx } from './context.js';
+import { fedComponentValue, ownComponents } from './score.js';
 import { advTechTileValue, gainValue, techTileValue } from './values.js';
 
 /** 加总 ResourceGain 数组。 */
@@ -107,32 +104,27 @@ function finalExpectation(ctx: EvalCtx): number {
 }
 
 /**
- * 联邦组潜力（叶估值项）：未入联邦己方建筑中，2 格组 pv 最大者的凸形价值
- * （(pv/7)²×weight）——"差一两步就成组"的局面应显著好于散沙局面。
- * 禁入区（已入联邦格及其邻格）的建筑不计。
+ * 联邦组潜力（叶估值项）：**已组建的联邦按满值组计入**（潜力转化为已入账成果——
+ * 不计的话组建联邦会让叶估值掉 ~20（7pv 组的凸形潜力蒸发），深搜会因此系统性
+ * 拒绝组建）；未入联邦己方建筑再按**连通分量**取
+ * 最好的 need（= targetCount − 已持联邦数）个加权求和（权重 1 / fedGroup2Mult /
+ * fedGroup3Mult）——3 联邦的几何前提是 2-3 个并行成长的簇。禁入区（已入联邦格
+ * 及其邻格）的建筑再也进不了新联邦，不计入。
  */
 function federationPotential(ctx: EvalCtx): number {
   const { state, seat } = ctx;
-  // 预计算禁入区。
-  const forbidden = new Set<HexKey>();
-  for (const [key, hex] of Object.entries(state.map)) {
-    if (hex.federations.includes(seat)) {
-      forbidden.add(key as HexKey);
-      for (const nb of mapNeighbors(state.map, key as HexKey)) forbidden.add(nb);
-    }
+  const held = ctx.me.federationTokens.length;
+  // 已锁定的联邦 = 满值组（7pv 凸形价）。
+  let v = held * fedComponentValue(7, ctx.cfg.mine.clusterPv * 0.5);
+  const need = Math.max(0, ctx.cfg.federation.targetCount - held);
+  if (need === 0) return v;
+  const comps = ownComponents(state, seat, { excludeFedAdjacent: true });
+  const pvs = [...comps.pvs].sort((a, b) => b - a);
+  const weights = [1, ctx.cfg.leaf.fedGroup2Mult, ctx.cfg.leaf.fedGroup3Mult];
+  for (let i = 0; i < Math.min(need, weights.length); i++) {
+    v += fedComponentValue(pvs[i] ?? 0, ctx.cfg.mine.clusterPv * 0.5) * weights[i]!;
   }
-  let best = 0;
-  for (const [key, hex] of Object.entries(state.map)) {
-    if (hex.building?.player !== seat || forbidden.has(key as HexKey)) continue;
-    let pv = 0;
-    for (const h of hexesWithin(state.map, key as HexKey, 2)) {
-      if (forbidden.has(h)) continue;
-      pv += buildingPowerValue(state, seat, state.map[h]!);
-    }
-    if (pv > best) best = pv;
-  }
-  const t = Math.min(best, 7) / 7;
-  return t * t * ctx.cfg.mine.clusterPv * 0.5;
+  return v;
 }
 
 /** 局面叶估值：state 对 seat 的期望 VP。 */

@@ -1,6 +1,6 @@
 /**
  * @gaia/llm — AI 层。消费方只许从包根导入。
- * M3：启发式评分内核（scoreAction/prescreen/HeuristicAgent）、局势摘要
+ * 启发式评分内核（scoreAction/prescreen/HeuristicAgent）、局势摘要
  * （summarizeState/describeAction/buildDecisionPrompt）、LLM 决策链
  * （ClaudeClient/AnthropicClient/LLMAgent，tool use 强制 choose + 启发式兜底）。
  */

@@ -17,7 +17,7 @@
  * 日志接口有每日复盘配额，遇 "reached a limit" 立即停当日日志段（state.logLimitDate）。
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -190,31 +190,47 @@ interface GamesResp {
       start: string;
       end: string;
       normalend: string;
+      arena_win: string | null;
+      arena_after: string | null;
     }[];
   };
 }
 
-function knownTableIds(): Set<string> {
+interface TableRecLine {
+  tableId: string;
+  playerIds: string[];
+  playerNames: string[];
+  scores: number[];
+  playerCount: number;
+  start: number;
+  end: number;
+  normalend: boolean;
+  arena?: boolean;
+}
+
+function loadTableRecords(): Map<string, TableRecLine> {
   const f = join(CACHE, 'tables.jsonl');
-  const ids = new Set<string>();
+  const map = new Map<string, TableRecLine>();
   if (existsSync(f)) {
     for (const line of readFileSync(f, 'utf8').split('\n')) {
       if (line.trim() === '') continue;
       try {
-        ids.add((JSON.parse(line) as { tableId: string }).tableId);
+        const r = JSON.parse(line) as TableRecLine;
+        map.set(r.tableId, r);
       } catch {
         // 跳过坏行
       }
     }
   }
-  return ids;
+  return map;
 }
 
 async function phaseGames(args: Args, st: State): Promise<void> {
   const players = JSON.parse(readFileSync(join(CACHE, 'players.json'), 'utf8')) as string[];
   const done = new Set(st.donePlayers);
-  const known = knownTableIds();
+  const known = loadTableRecords();
   let added = 0;
+  let arenaTagged = 0;
   for (const pid of players) {
     if (done.has(pid)) continue;
     for (let page = 1; page <= 50; page++) {
@@ -225,9 +241,18 @@ async function phaseGames(args: Args, st: State): Promise<void> {
       const tables = r?.data?.tables;
       if (tables === undefined || tables.length === 0) break;
       for (const t of tables) {
-        if (known.has(t.table_id)) continue;
-        known.add(t.table_id);
-        const rec = {
+        // arena_win/arena_after 非空 = Arena（竞技赛季）桌——免费标签，无需 tableinfos。
+        const arena = t.arena_win != null || t.arena_after != null;
+        const old = known.get(t.table_id);
+        if (old !== undefined) {
+          // 已收录：仅补 arena 标签（整文件重写发生在每个玩家收尾）。
+          if (arena && old.arena !== true) {
+            old.arena = true;
+            arenaTagged++;
+          }
+          continue;
+        }
+        const rec: TableRecLine = {
           tableId: t.table_id,
           playerIds: t.players.split(','),
           playerNames: t.player_names.split(','),
@@ -236,8 +261,9 @@ async function phaseGames(args: Args, st: State): Promise<void> {
           start: Number(t.start),
           end: Number(t.end),
           normalend: t.normalend === '1',
+          ...(arena ? { arena: true } : {}),
         };
-        appendFileSync(join(CACHE, 'tables.jsonl'), JSON.stringify(rec) + '\n');
+        known.set(t.table_id, rec);
         added++;
       }
       if (tables.length < 10) break; // 不足一页 = 末页
@@ -245,7 +271,12 @@ async function phaseGames(args: Args, st: State): Promise<void> {
     done.add(pid);
     st.donePlayers.push(pid);
     saveState(st);
-    console.log(`[games] 玩家 ${done.size}/${players.length}，新增桌 ${added}，累计 ${known.size}`);
+    // 每个玩家收尾整文件重写（合并 arena 标签补记）
+    writeFileSync(
+      join(CACHE, 'tables.jsonl'),
+      [...known.values()].map((r2) => JSON.stringify(r2)).join('\n') + '\n',
+    );
+    console.log(`[games] 玩家 ${done.size}/${players.length}，新增桌 ${added}，累计 ${known.size}（arena 补记 ${arenaTagged}）`);
   }
 }
 
@@ -253,7 +284,16 @@ interface TableInfoResp {
   status: number | string;
   data?: {
     result?: {
-      player?: { player_id: string; name: string; score: string; gamerank: string; rank_after_game: string }[];
+      player?: {
+        player_id: string;
+        name: string;
+        score: string;
+        gamerank: string;
+        rank_after_game: string;
+        arena_points_win?: string | null;
+        arena_after_game?: string | null;
+        th_name?: string | null;
+      }[];
       endgame_reason?: string;
       time_duration?: string;
     };
@@ -305,73 +345,109 @@ async function phaseLogs(args: Args, st: State): Promise<void> {
     st.logCount = 0;
   }
   // 优先级：人数 4 > 2 > 3 > 其他，同级按结束时间倒序。LF 判定需要 infos——
-  // 全量 infos 不现实（十万级桌），做法：先按基础优先级取候选池（logsMax×2+30），
-  // 池内懒拉 infos（每桌一次），再按 LF 最优先重排。
-  type Rec = { tableId: string; playerCount: number; end: number };
+  // 全量 infos 不现实（十万级桌），做法：分批处理（每批 200 桌）——批内懒拉
+  // infos（每桌一次）、按 LF 最优先重排后逐桌拉日志，批完再取下一批，
+  // 直到 logsMax / BGA 硬限额 / 候选耗尽。
+  type Rec = { tableId: string; playerCount: number; end: number; arena?: boolean };
   const tables = readFileSync(join(CACHE, 'tables.jsonl'), 'utf8')
     .split('\n')
     .filter((l) => l.trim() !== '')
     .map((l) => JSON.parse(l) as Rec);
-  const isLf = (id: string): boolean => {
+  const infoOf = (id: string): TableInfoResp | null => {
     try {
-      const info = JSON.parse(readFileSync(join(CACHE, 'infos', `${id}.json`), 'utf8')) as TableInfoResp;
-      return Object.values(info.data?.options ?? {}).some((o) => /lost fleet|舰队/i.test(o.name) && o.value !== '0' && !/^off$/i.test(o.value));
+      return JSON.parse(readFileSync(join(CACHE, 'infos', `${id}.json`), 'utf8')) as TableInfoResp;
     } catch {
-      return false;
+      return null;
     }
   };
+  const isLf = (id: string): boolean =>
+    Object.values(infoOf(id)?.data?.options ?? {}).some(
+      (o) => /lost fleet|舰队/i.test(o.name) && o.value !== '0' && !/^off$/i.test(o.value),
+    );
+  // 锦标赛（th_name）/ Arena（arena_after_game 非空）桌——用户：锦标赛数据最好。
+  const tourneyKind = (id: string): 'th' | 'arena' | null => {
+    const ps = infoOf(id)?.data?.result?.player ?? [];
+    if (ps.some((p) => (p as { th_name?: string | null }).th_name != null)) return 'th';
+    if (ps.some((p) => p.arena_after_game != null || p.arena_points_win != null)) return 'arena';
+    return null;
+  };
   const basePrio = (t: Rec): number => (t.playerCount === 4 ? -10 : t.playerCount === 2 ? -5 : t.playerCount === 3 ? -2 : 0) - t.end / 1e10;
-  const pool = tables
-    .filter((t) => !existsSync(join(CACHE, 'logs', `${t.tableId}.json`)))
-    .sort((a, b) => basePrio(a) - basePrio(b))
-    .slice(0, args.logsMax * 2 + 30);
-  // 池内懒拉 infos（LF 判定 + 供 export 的 ELO）
-  for (const t of pool) {
-    const f = join(CACHE, 'infos', `${t.tableId}.json`);
-    if (existsSync(f)) continue;
-    const r = await callJson<TableInfoResp>(
-      `https://boardgamearena.com/table/table/tableinfos.html?id=${t.tableId}`,
-      args.delay,
-    );
-    if (r !== null) writeFileSync(f, JSON.stringify(r));
-  }
-  const pending = pool.sort((a, b) => {
-    const pa = (isLf(a.tableId) ? -100 : 0) + basePrio(a);
-    const pb = (isLf(b.tableId) ? -100 : 0) + basePrio(b);
-    return pa - pb;
-  });
-  console.log(`[logs] 候选池 ${pending.length} 桌（今日已拉 ${st.logCount}/${args.logsMax}）`);
-  for (const t of pending) {
-    if (st.logCount >= args.logsMax) {
-      console.log(`[logs] 达今日自设上限 ${args.logsMax}，停`);
+  const prio = (t: Rec): number => {
+    const tk = tourneyKind(t.tableId);
+    return (tk === 'th' ? -400 : tk === 'arena' ? -300 : 0) + (isLf(t.tableId) ? -100 : 0) + basePrio(t);
+  };
+  const BATCH = 200;
+  // 复盘保留期实测 ~13 个月（2025-08 起有效、2025-07 全灭）——更早的桌直接跳过，
+  // 别浪费预热/拉取请求（曾 87% 请求打在死桌上）。
+  const REPLAY_CUTOFF = Math.floor(Date.now() / 1000) - 400 * 86400;
+  let stop = false;
+  while (st.logCount < args.logsMax && !stop) {
+    // 批选择：tables.jsonl 里已带 arena 标签的桌直接浮上来（无需 infos）；
+    // 锦标赛（th_name）只有 infos 可判，靠批内重排上浮。
+    const pool = tables
+      .filter((t) => t.end >= REPLAY_CUTOFF && !existsSync(join(CACHE, 'logs', `${t.tableId}.json`)))
+      .sort((a, b) => (a.arena === true ? -300 : 0) + basePrio(a) - ((b.arena === true ? -300 : 0) + basePrio(b)))
+      .slice(0, BATCH);
+    if (pool.length === 0) {
+      console.log('[logs] 候选耗尽');
       break;
     }
-    // 预热 archive（必须，否则 logs 可能不返回）
-    await call(
-      `https://boardgamearena.com/gamereview/gamereview/requestTableArchive.html?table=${t.tableId}`,
-      Math.max(args.delay, 8000),
-      { xhr: true },
-    );
-    const r = await callJson<LogsResp>(
-      `https://boardgamearena.com/archive/archive/logs.html?table=${t.tableId}&translated=true`,
-      Math.max(args.delay, 8000),
-    );
-    if (r === null) continue;
-    if (typeof r.error === 'string' && /reached a limit/i.test(r.error)) {
-      st.logLimitDate = today();
+    // 批内懒拉 infos（LF 判定 + 供 export 的 ELO）
+    for (const t of pool) {
+      const f = join(CACHE, 'infos', `${t.tableId}.json`);
+      if (existsSync(f)) continue;
+      const r = await callJson<TableInfoResp>(
+        `https://boardgamearena.com/table/table/tableinfos.html?id=${t.tableId}`,
+        args.delay,
+      );
+      if (r !== null) writeFileSync(f, JSON.stringify(r));
+    }
+    const pending = pool.sort((a, b) => prio(a) - prio(b));
+    console.log(`[logs] 本批 ${pending.length} 桌（今日已拉 ${st.logCount}/${args.logsMax}）`);
+    for (const t of pending) {
+      if (st.logCount >= args.logsMax) {
+        console.log(`[logs] 达今日自设上限 ${args.logsMax}，停`);
+        stop = true;
+        break;
+      }
+      // 预热 archive（必须，否则 logs 不返回）；archive 生成是异步的（官方页面
+      // 每 5s 轮询）——拉不到就 12s/25s 再试两轮，仍不行才标死（曾把生成中的
+      // 新桌大批误判为 dead：2026-09 单月 221 假死）。
+      await call(
+        `https://boardgamearena.com/gamereview/gamereview/requestTableArchive.html?table=${t.tableId}`,
+        args.delay,
+        { xhr: true },
+      );
+      let r: LogsResp | null = null;
+      for (const waitMs of [0, 12_000, 25_000]) {
+        if (waitMs > 0) {
+          console.log(`[logs] ${t.tableId} archive 生成中，${waitMs / 1000}s 后重试…`);
+          await sleep(waitMs);
+        }
+        r = await callJson<LogsResp>(
+          `https://boardgamearena.com/archive/archive/logs.html?table=${t.tableId}&translated=true`,
+          args.delay,
+        );
+        if (r !== null && (r.data?.logs !== undefined || (typeof r.error === 'string' && /reached a limit/i.test(r.error)))) break;
+      }
+      if (r === null) continue;
+      if (typeof r.error === 'string' && /reached a limit/i.test(r.error)) {
+        st.logLimitDate = today();
+        saveState(st);
+        console.log('[logs] 触发 BGA 每日复盘限额，今日日志段停止');
+        stop = true;
+        break;
+      }
+      if (r.data?.logs === undefined) {
+        // 轮询两轮仍无：真死（replay deleted/empty archive）——写死标记避免重试
+        writeFileSync(join(CACHE, 'logs', `${t.tableId}.json`), JSON.stringify({ dead: true, error: r.error ?? 'unknown' }));
+        continue;
+      }
+      writeFileSync(join(CACHE, 'logs', `${t.tableId}.json`), JSON.stringify(r));
+      st.logCount++;
       saveState(st);
-      console.log('[logs] 触发 BGA 每日复盘限额，今日日志段停止');
-      break;
+      console.log(`[logs] ${t.tableId}（${t.playerCount}p）packets=${r.data.logs.length} 今日 ${st.logCount}/${args.logsMax}`);
     }
-    if (r.data?.logs === undefined) {
-      // empty archive / replay deleted 等：写空标记避免反复重试
-      writeFileSync(join(CACHE, 'logs', `${t.tableId}.json`), JSON.stringify({ dead: true, error: r.error ?? 'unknown' }));
-      continue;
-    }
-    writeFileSync(join(CACHE, 'logs', `${t.tableId}.json`), JSON.stringify(r));
-    st.logCount++;
-    saveState(st);
-    console.log(`[logs] ${t.tableId}（${t.playerCount}p）packets=${r.data.logs.length} 今日 ${st.logCount}/${args.logsMax}`);
   }
 }
 
@@ -389,7 +465,8 @@ function phaseStatus(): void {
 /**
  * 蒸馏导出 → data/bga/tables.jsonl（git 跟踪）。字段刻意紧凑：
  * id=桌号 d=结束日 pc=人数 lf=是否舰队扩（infos 判定时） p=[名字,分数,ELO后]×N
- * ne=false 表示非正常结束（弃局/超时）。ELO 来自 tableinfos 的 rank_after_game。
+ * ne=false 表示非正常结束（弃局/超时）。ar=Arena 竞技桌，th=锦标赛桌。
+ * ELO 来自 tableinfos 的 rank_after_game。
  */
 function phaseExport(): void {
   mkdirSync(EXPORT_DIR, { recursive: true });
@@ -410,6 +487,7 @@ function phaseExport(): void {
     playerCount: number;
     end: number;
     normalend: boolean;
+    arena?: boolean;
   }
   const lines = readFileSync(join(CACHE, 'tables.jsonl'), 'utf8')
     .split('\n')
@@ -420,7 +498,10 @@ function phaseExport(): void {
       const info = infoOf(t.tableId);
       const opts = Object.values(info?.data?.options ?? {});
       const lf = opts.some((o) => /lost fleet|舰队/i.test(o.name) && o.value !== '0' && !/^off$/i.test(o.value));
-      const elos = info?.data?.result?.player?.map((p) => Number(p.rank_after_game)) ?? [];
+      const ps = info?.data?.result?.player ?? [];
+      const elos = ps.map((p) => Number(p.rank_after_game));
+      const arena = t.arena === true || ps.some((p) => p.arena_after_game != null || p.arena_points_win != null);
+      const th = ps.some((p) => p.th_name != null);
       const rec: Record<string, unknown> = {
         id: t.tableId,
         d: new Date(t.end * 1000).toISOString().slice(0, 10),
@@ -428,6 +509,8 @@ function phaseExport(): void {
         p: t.playerNames.map((n, i) => [n, t.scores[i] ?? 0, elos[i] ?? 0]),
       };
       if (lf) rec.lf = 1;
+      if (arena) rec.ar = 1;
+      if (th) rec.th = 1;
       if (!t.normalend) rec.ne = 0;
       return JSON.stringify(rec);
     });

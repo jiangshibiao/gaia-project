@@ -1,16 +1,19 @@
 /**
  * cfg 驱动的价值尺度：资源/收入/研究/科技片/联邦标记/助推器 → VP 等值。
- * 逻辑移植自 v1 heuristic/values.ts，权重全部改从 ctx.cfg 读取（可调参），
+ * 逻辑与 v1 heuristic/values.ts 同框架，权重全部从 ctx.cfg 读取（可调参），
  * 并叠加阶段权重（收入贴现、库存贬值）与回合计分板对齐。
  */
 import {
   ADV_TECH_TILES,
   BOOSTERS,
+  EXPLORE_SHIP_COST_VP,
+  EXPLORE_SHIP_COST_VP_BALTAKS,
   FEDERATION_TOKENS,
   RESEARCH_TRACKS,
   ROUND_SCORING,
   TECH_TILES,
   countUnits,
+  shuttlesPerPlayer,
   type AdvTechTileId,
   type BoosterId,
   type FederationTokenId,
@@ -57,6 +60,23 @@ export function incomeNpv(ctx: EvalCtx, gain: ResourceGain): number {
   return gainValue(ctx, gain) * ctx.roundsLeft * ctx.cfg.phase[ctx.phase].incomeMult;
 }
 
+/**
+ * LF 登船费门槛拉力：vp 低于登船费且还有穿梭机可派时，
+ * VP 收益加权 1 + (cost−vp)/cost×vpDeficitPull——优先把分攒到 5 早上船。
+ * 规则要求足额支付（引擎在 vp<5 时直接禁枚举 explore-ship），所以只能靠
+ * 抬高 VP 收益让 AI 主动跨线。基础变体/已达标/穿梭机用完 → 1。
+ */
+export function vpPullMult(ctx: EvalCtx): number {
+  if (ctx.variant !== 'lostFleet') return 1;
+  const pull = ctx.cfg.explore.vpDeficitPull;
+  if (pull <= 0) return 1;
+  const p = ctx.me;
+  const cost = p.faction === 'baltaks' ? EXPLORE_SHIP_COST_VP_BALTAKS : EXPLORE_SHIP_COST_VP;
+  if (p.vp >= cost) return 1;
+  if (p.shuttles.length >= shuttlesPerPlayer(ctx.state.config.playerCount)) return 1;
+  return 1 + (pull * (cost - p.vp)) / cost;
+}
+
 // ---------------------------------------------------------------------------
 // 回合计分板
 // ---------------------------------------------------------------------------
@@ -70,6 +90,7 @@ export function roundTile(state: GameState) {
 /**
  * 计分板触发的 VP：本轮全额 + 下一轮按 nextRoundMult 折算预期
  * （下轮局面未到，兑现不确定——但行动若可延续到下轮仍有价值）。
+ * LF 登船费门槛内叠 vpPullMult（攒分期 VP 更值钱）。
  */
 export function scoringVp(ctx: EvalCtx, on: string, times = 1): number {
   let v = 0;
@@ -82,7 +103,7 @@ export function scoringVp(ctx: EvalCtx, on: string, times = 1): number {
       v += next.trigger.vp * times * ctx.cfg.scoring.nextRoundMult;
     }
   }
-  return v;
+  return v * vpPullMult(ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +155,8 @@ function advTicketExpectation(ctx: EvalCtx): number {
 /** 联邦标记估值：vp + 即时资源 + LF 即时效果 + 绿面门票价值（稀缺敏感）。 */
 export function federationTokenValue(ctx: EvalCtx, id: FederationTokenId): number {
   const def = FEDERATION_TOKENS[id];
-  let v = def.vp + (def.other !== undefined ? gainValue(ctx, def.other) : 0);
+  // vp 面叠登船门槛拉力（攒分期联邦标记的 VP 更值钱）。
+  let v = def.vp * vpPullMult(ctx) + (def.other !== undefined ? gainValue(ctx, def.other) : 0);
   switch (def.immediate) {
     case 'tech-tile':
       v += 6;

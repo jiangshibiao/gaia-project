@@ -31,6 +31,7 @@ function actingPlayer(state: GameState): PlayerIndex {
   if (pending !== null) {
     return pending.kind === 'charge' ? pending.queue[0]!.player : pending.player;
   }
+  if (state.turnHold !== null) return state.turnHold;
   if (state.phase === 'setup') return state.setupQueue[0]!;
   return state.currentPlayerIdx;
 }

@@ -1,5 +1,5 @@
 /**
- * ClaudeClient 抽象与 AnthropicClient 实现（照 Brass M3 架构按盖亚适配）。
+ * ClaudeClient 抽象与 AnthropicClient 实现（参照 Brass 架构按盖亚适配）。
  *
  * - ClaudeClient：决策链对 LLM 的最小依赖——一次 decide 请求（system 静态、
  *   user 动态、candidates 候选数、model/maxTokens/timeoutMs）返回结构化选择

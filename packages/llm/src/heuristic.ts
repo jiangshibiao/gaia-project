@@ -629,8 +629,8 @@ function scorePass(
       s += countUnits(state, seat, def.passVp.per) * def.passVp.vp;
     }
   }
-  // 新助推器只计「新−旧」差值——不 pass 就续用旧的（全额 NPV 会压过一切
-  // 主行动，导致每轮直接 Pass 的死亡螺旋，bench 实测）。
+  // 新助推器只计「新−旧」差值——不 pass 就续用旧的（按全额 NPV 计会压过
+  // 一切主行动，AI 会每轮直接 pass）。
   if (action.booster !== null) {
     const newValue = boosterValue(state, seat, action.booster);
     const oldValue = p.booster !== null ? boosterValue(state, seat, p.booster) : 0;
@@ -658,7 +658,7 @@ function scoreFreeConversion(
   let s = gainValue(def.gain) - costValue(def.cost);
   // gaiaformer 弃置成本（baltaks-gf-q）。
   if (def.cost.gaiaformer !== undefined) s -= def.cost.gaiaformer * 2;
-  // v1 简单处理：净差为负但转换后能负担任何主行动时视为中性（解锁关键行动）。
+  // 简化处理：净差为负但转换后能负担任何主行动时视为中性（解锁关键行动）。
   if (s < 0) {
     const p = state.players[seat]!;
     const r = p.resources;

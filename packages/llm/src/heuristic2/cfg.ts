@@ -100,8 +100,12 @@ export interface Cfg {
     satelliteCost: number;
     /** satellite 终局进程 / 个。 */
     satelliteProgress: number;
-    /** 第 3 个联邦的额外奖励（社区共识：3 联邦是获胜底线）。 */
+    /** 第 targetCount 个联邦的额外奖励（社区共识：3 联邦是获胜底线）。 */
     thirdBonus: number;
+    /** 目标联邦数（整体策略目标：联邦数朝 ≥3 推进）。 */
+    targetCount: number;
+    /** 联邦缺口期的簇拉力加成：簇拉力 ×(1 + max(0, target−1−held) × 本值)。 */
+    deficitClusterBoost: number;
   };
   boardAction: {
     buildMine: number;
@@ -123,6 +127,10 @@ export interface Cfg {
     valuePerRoundLeft: number;
     /** nevlas/itars/taklons 的族属额外费用。 */
     factionPenalty: number;
+    /** 首船前期优先（×roundsLeft/5；第 2 艘减半、第 3 艘 1/4）——早上船早解锁行动格。 */
+    earlyShipBonus: number;
+    /** vp 低于登船费时 VP 收益的加权（1 + (cost−vp)/cost×本值）——优先攒分登船。 */
+    vpDeficitPull: number;
   };
   pass: {
     /** 首个 pass 的先手价值（下轮首动）。 */
@@ -173,6 +181,9 @@ export interface Cfg {
     /** 持有科技片/高级片的折算（相对 action 评分里的全额）。 */
     techTileMult: number;
     advTileMult: number;
+    /** 第 2/3 簇潜力权重（相对第 1 簇）——多簇并行是 3 联邦的几何前提。 */
+    fedGroup2Mult: number;
+    fedGroup3Mult: number;
   };
   /** 自我深搜（假设不碰撞：对手占位，只展开我的行动序列）。 */
   selfSearch: {
@@ -235,7 +246,7 @@ export const BASE_CFG: Cfg = {
   },
   phase: {
     // R1-2：经济雪球期——收入全额、库存全额、leech 几乎无脑收（社区：R1-4 全收）。
-    // clusterMult 消融结论：早期 >1 过度聚簇伤扩张（2p −5 分），保持 1。
+    // 早期 clusterMult >1 会过度聚簇伤扩张（2p 实测 −5 分），保持 1。
     early: { incomeMult: 1, stockMult: 1, chargeMult: 1.4, expansionMult: 1, clusterMult: 1 },
     mid: { incomeMult: 0.7, stockMult: 0.8, chargeMult: 1.1, expansionMult: 0.9, clusterMult: 1 },
     late: { incomeMult: 0.6, stockMult: 0.35, chargeMult: 0.7, expansionMult: 0.7, clusterMult: 0.7 },
@@ -274,6 +285,10 @@ export const BASE_CFG: Cfg = {
     satelliteCost: 1.5,
     satelliteProgress: 0.3,
     thirdBonus: 6,
+    targetCount: 3,
+    // 调大未提升联邦数且拖分（−2 分：簇拉力增强同样伤扩张，同 clusterMult>1
+    // 结论）——默认中性，留作 GAIA_TUNE_V2 消融位。
+    deficitClusterBoost: 0,
   },
   boardAction: {
     buildMine: 7,
@@ -292,6 +307,8 @@ export const BASE_CFG: Cfg = {
   explore: {
     valuePerRoundLeft: 1.4,
     factionPenalty: 1,
+    earlyShipBonus: 0, // 基础变体无飞船，LF_DELTA 里开启
+    vpDeficitPull: 0,
   },
   pass: {
     firstPassBonus: 1.5,
@@ -328,12 +345,19 @@ export const BASE_CFG: Cfg = {
     federationValue: 2,
     techTileMult: 0.5,
     advTileMult: 0.5,
+    // 多簇并行潜力（联邦 ≥3 的几何前提）：满权档（0.7/0.5）实测 −2.1 分，
+    // 取减半值；若仍拖分再归零（bench 裁决）。
+    fedGroup2Mult: 0.35,
+    fedGroup3Mult: 0.2,
   },
   selfSearch: {
+    // depth4+6000 为当前平衡点：depth5 紧帽均分更高但最高均值下降（深度抬
+    // 下限压上限——根帽收紧丢天花板）且耗时 ~2.5×；depth5+大预算单局 >50min
+    // 不可行，不采用。
     enabled: true,
-    depth: 3,
-    nodeBudget: 4000,
-    caps: [10, 8, 6, 4],
+    depth: 4,
+    nodeBudget: 6000,
+    caps: [10, 8, 6, 4, 3],
     secondWeight: 0.2,
   },
   search: {
@@ -377,6 +401,10 @@ export const LF_DELTA: DeepPartial<Cfg> = {
   },
   explore: {
     valuePerRoundLeft: 2, // 船载 QIC 行动+科技片+金联邦牌回本更快
+    // earlyShipBonus 4 / vpDeficitPull 0.8 档实测 −2.2 分且未改变上船时点
+    // （本就 R1-2 占多数）——默认中性，留作 GAIA_TUNE_V2 消融位。
+    earlyShipBonus: 0,
+    vpDeficitPull: 0,
   },
   scoring: {
     nextRoundMult: 0.8, // LF 轮均分更高，计分板对齐更值钱
