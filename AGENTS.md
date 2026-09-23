@@ -9,7 +9,7 @@
 
 - `packages/engine`（`@gaia/engine`）：零依赖纯 TS 规则引擎。
 - `packages/protocol`（`@gaia/protocol`）：ws 消息类型（带版本号）+ `actorOf` + `filterStateFor`（仅剥 `rngState`，盖亚无隐藏信息）。
-- `packages/server`（`@gaia/server`）：权威 WebSocket 服务器（房间码/token/重连/SQLite 重放恢复/AI 座位/draft 选族）。
+- `packages/server`（`@gaia/server`）：权威 WebSocket 服务器（房间码/token/重连/SQLite 重放恢复/AI 座位/draft 选族）；快照带全量行动日志（`GameSession.actionLog` 与 actions 表同步）。
 - `packages/web`（`@gaia/web`）：React + Vite 客户端，SVG 棋盘，原版美术素材。
 - `packages/llm`（`@gaia/llm`）：AI 层——AgentPlugin 插件契约 + registry + 启发式 v1/v2 + LLM 决策链 + bench。
 
@@ -20,81 +20,102 @@ npm install
 npm run fetch-assets -w @gaia/web  # 素材缺失时先跑（见下「素材与版权」）
 npm run dev -w @gaia/server   # ws :8430, SQLite packages/server/gaia.db
 npm run dev -w @gaia/web      # vite :5175（局域网加 -- --host 0.0.0.0）
-npm run typecheck && npm test # 全仓（目前 541+ 全绿）
-npm run bench -w @gaia/llm -- --agents heuristic2,random --games 20 --mirror --concurrency 4
-# 内战均分/随机种族池/无扩展变体见下方「AI（heuristic2）」节
+# 局域网生产部署（单端口：静态 dist + /ws 同端口；独立于 agent 会话常驻）：
+npm run build -w @gaia/web    # 产出 packages/web/dist（含游戏素材 ~107MB）
+cd packages/server && PORT=8430 DB_PATH=./gaia.db WEB_DIST=../web/dist \
+  nohup npx vite-node src/main.ts > /tmp/gaia-deploy.log 2>&1 & disown
+# 访问 http://<局域网IP>:8430（代码改动需重新 build 并重启该进程）
+npm run typecheck && npm test # 全仓全绿
+# AI bench 见下方「AI（heuristic2）」节
 # 注入一局中期对局供人工检查（打印房码/token/localStorage 一行）：
 npx vite-node reference/harness/seed-midgame.ts <轮数>
 ```
 
 **Git**：仓库已对接 GitHub `jiangshibiao/gaia-project`（main）。**游戏素材不进 git**
-（版权属出版方，`.gitignore` 排除 `packages/web/public/assets/`，GitHub 上只有
-`assets/README.md` 法律声明）；缺失时用 `npm run fetch-assets -w @gaia/web` 从
+（版权属出版方，`.gitignore` 排除 `packages/web/public/assets/`，仅 `assets/README.md`
+法律声明被 track）；缺失时用 `npm run fetch-assets -w @gaia/web` 从
 Etchelon/boardgamers viewer/uiqoo/Feuerland/BGG 等公开来源重建（约 300 文件，
-自动裁边/去白边/写扇区校准）。
+自动裁边/去白边/写扇区校准）。**没有用户明确指令不 commit/push。**
 
 ## 关键工程约定（不可破坏）
 
-- **源码即产物**：各包 `exports: { ".": "./src/index.ts" }`，无构建步骤；vite-node/vitest/vite 直接吃 TS。NodeNext 下相对导入**必须写 `.js` 后缀**。消费方只许从包根导入（engine 有 public-api 测试守护）。
-- **不要让裸 `tsc` 的 `.js` 产物进 `packages/*/src`**（已被 gitignore；陈旧 .js 会让 vitest 优先加载它们导致解析失败）。
-- **引擎纯函数 + 种子确定性**：`newGame(config)` 同 config 逐字节一致；`applyAction` 克隆后原地改；随机一律 `createRng(seed)`（mulberry32），引擎内禁止 `Date.now`/`Math.random`；`stableStringify` 做重放与合法性校验（行动 = 枚举集成员比对）。
+- **源码即产物**：各包 `exports: { ".": "./src/index.ts" }`，无构建步骤；vite-node/vitest/vite 直接吃 TS。NodeNext 下相对导入**必须写 `.js` 后缀**。消费方只许从包根导入（engine 有 public-api 测试守护）。裸 `tsc` 的 `.js` 产物不得进 `packages/*/src`（陈旧 .js 会让 vitest 优先加载导致解析失败）。
+- **引擎纯函数 + 种子确定性**：`newGame(config)` 同 config 逐字节一致；`applyAction` 克隆后原地改；随机一律 `createRng(seed)`（mulberry32），引擎内禁止 `Date.now`/`Math.random`；`stableStringify` 做重放与合法性校验（行动 = 枚举集成员比对——**枚举与 apply 必须一致**，replay 会暴露分歧）。
 - **行动模型**：原子行动 + pending 队列。主行动消耗回合；免费行动不消耗；pending（charge 队首/其他 kind 的 .player）> setupQueue[0] > currentPlayerIdx（`actorOf` 统一裁决，server/web 共用）。
-- **撤销（undo）**：`session.undo(seat)` 截断落库到该座位最近回合起点（`actorOf==seat && pending==null` 的最近点）并重放重建；尾段含其他**真人**座位行动则拒（AI 行动/响应可一并回退）。web 端 `store.undo()`；快照 seq 回归时 store 同步裁剪行动日志；GameScreen 回合起点检查点驱动「撤销条」（每次提交后浮出，显示本行动资源/VP 增量，[撤销]/[完成]）。**撤销条显示条件**（2026-09-21 收紧）：检查点以来日志有我的回合内行动（charge/decline 充能响应不算——充能不可撤销不弹条），且无其他**真人**座位的回合内行动（`SeatInfo.isAI` 判定；真人对手行动后 server 必拒，显示即误导；AI 行动不挡），收起后仅当我又行动才再弹出。
-- **行动确认流（2026-09-21 简化，暂结闸已废）**：全部行动确认即直接提交服务器（无本地暂结态）；放建筑（`place-initial-mine`/`build-mine`）与选助推器（`choose-booster`）连确认条也跳过——选完即提交（`GameScreen.tryDirectSubmit`）。确认条（ActionBar confirm-bar）上用本地 `applyAction(assumeLegal)` 试算显示该行动花销/收益增量（`display.describeDelta/deltaText`，纯展示不产生状态）。后悔一律用撤销条整回合回退。行动红框（`actionFlash.ts`）由服务器回播的 action_applied 日志驱动（全员可见），地图 hex/版图解锁槽/轨道到达格/板块，~5s。
-- **回合顺序**：下轮行动顺序 = 本轮 pass 顺序（不是固定桌序；被动充能/leech 仍按桌序）。
+- **撤销（undo）**：`session.undo(seat)` 截断落库到**该座位最近一条行动**（含其后全部行动）并重放重建——是"单行动"而非"整回合"；web 撤销条只在回合进行中可用（无 confirm-turn），故一键效果 = 撤掉整个未完成回合（主行动+后续免费行动都在尾段一并删）。尾段含其他**真人**座位非响应行动则拒（AI 行动、任意座位的 charge/decline-charge 响应可一并回退）。web 端 `store.undo()`；快照 seq 回归时 store 同步裁剪行动日志。**代客多回合回退须逐座位交替逐条 undo**（每次只删一条；跨真人回合直接调 undo 会被尾段校验拒）。
+- **行动确认流**：任何行动选择完整即直接提交服务器（`GameScreen.tryDirectSubmit`，全行动类型；选择末步选完即走，无确认/取消条）。后悔一律用撤销条整回合回退。**确认拦截点只有地图下方撤销条一个**（[完成]=提交 confirm-turn 放闸）。ActionBar 只剩 pending 决策（charge/income-order/tech 选择等）与等待提示；turnhold-banner 与 confirm-bar 均已删除。**直点交互**：地图飞船直点=探索该船（`onMapShipClick`，普通候选优先于射程加成特殊行动）；选择流中地图点船=回答 ship 字段（gleens +2 等 hex 问题下自动 hex=null→ship 一次点完）；PI 热区有专属能力的族直发该能力（`onSpecialTile` 预填，无专属能力族退回特殊行动菜单）；ac2 八角/bescods 八边形/探索板八角（gleens-range 等）/科技片高级片八角（tech9/advtech*）/助推片八角（booster4/5）全部 `onSpecialTile` 直发；研究板行动格/联邦片供应区/船上金框片/版图建筑拖拽/地图 hex（建筑→升级、空地→建矿）直点。行动红框（`actionFlash.ts`）由服务器回播日志驱动（全员可见），~5s。
 - **严格 TS**：strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes。改 types.ts 只追加不改语义。
-- **任何服务器拒绝必须有可见反馈**（error-toast；`lastError` 曾只写不上屏，用户以为"点了没反应"）。
+- **任何服务器拒绝必须有可见反馈**（error-toast）。
+- **任何 pending 决策类型必须有交互入口**：GameScreen effect 对 gain-tech-tile/free-mine/tinkering/itars-gaia 自动开选择流。新增 pending 类型时**必须同步接选择流**，否则玩家必然卡死。
+- **选择流字段清单必须与引擎枚举字段一致**：类别的 fields 漏列引擎枚举里的区分字段会让候选在选择机里塌缩、玩家根本看不到该选项。引擎行动新增载荷字段时，同步检查 `interactions.ts` 对应类别的 fields（有"高级板三件套"字段清单回归测试）。
+- **拿板类问题的选项顺序**：高级板问题**置顶**（有高级板候选时先问「高级科技板 / 拿标准板 →」）。**轨道先于翻面**：L5 推进才需翻联邦片——先给全部轨道选项，选到 L5 轨时才出翻面问（单标记自动落定）；普通片+非 L5 轨时翻面问完全不出现。**高级板覆盖基础板的显示**：TechBoosterStrip 里被覆盖的基础板不再单独出现，原位置直接替换为高级板（acquisitions 去重，物理覆盖关系）。**联邦片按"同 id 第几枚"匹配实例**：同 id 两枚的翻面状态可能不同（PlayerMat `fedInstance`，勿回退成按 id find）。
 
 ## 规则数据来源与准确性
 
 - 官方规则书文本：`reference/gaia-base-rules.txt`、`reference/lost-fleet-rules.txt`（本地，gitignored）。
 - 精确数据交叉验证（MIT 许可）：`reference/gaia-engine`（gaia-project.io 官方引擎源码，基础游戏）与 `reference/gaia-project`（同系，含 Lost Fleet 实现）。
 - LF 文字层缺失的组件数据（深空 16 面、Interspace 构成、新族面板、13 神器、6 Tinkering tiles、飞船行动格分配、金框联邦标记、eco 覆盖板双面）由调研 + BGG/uiqoo/Feuerland 图像实证补全，集中在 `packages/engine/src/data/lostfleet.ts`（改数据只动它）。
+- 规则细节备忘：2 人局移除叛乱号（Rebellion）；基础 9 种科技片供应 = `min(t.count, playerCount)`；拿科技板可升哪条轨由开局洗入的 `board.techTilePositions` 决定；ship-terraform-step 免 gaia 费/排除 asteroid 是参考引擎原文行为。
+- **参考引擎的 quirk 要对齐而非"修正"**：leech 空碗不邀约、fed1 无绿面、setup 放置不产生邀约、ship-credit 建矿逐项扣费（不收 gaia 费/不得 proto 分/排除 asteroid）。
 
 ## 差分对拍（规则正确性的核心保障）
 
-`reference/harness/`（gitignored 本地工具）：
+`reference/harness/`（gitignored 本地工具）：参考引擎（vite-node 驱动）与我们的引擎
+从**完全相同的局面**（`GameConfig.preset` 指定地图摆放 + 全部板块抽取）出发，逐步
+执行等价行动，归一化比对状态。
 
-- 原理：参考引擎（`reference/gaia-project/engine`，vite-node 驱动）与我们的引擎从**完全相同的局面**（`GameConfig.preset` 指定地图摆放 + 全部板块抽取）出发，逐步执行等价行动，归一化比对状态。
-- `run-diff.ts <fixture>`：主程序（`--max-steps N --continue-on-diff`）。`gen-fixture.ts`：随机对局生成。`hunt-scenario.ts`/`hunt-advtech.ts`：定向狩猎缺口机制。`NOTES.md`：合理差异（玩家选择类：power 来源区/脑石归位/部分充能，用 assumeLegal 覆盖并记 NOTE）。
+- `run-diff.ts <fixture>`：主程序（`--max-steps N --continue-on-diff`）。`gen-fixture.ts`：随机对局生成。`hunt-scenario.ts`/`hunt-advtech.ts`：定向狩猎缺口机制。`fed-diff.ts`：联邦形状枚举对拍。`NOTES.md`：合理差异（玩家选择类，用 assumeLegal 覆盖并记 NOTE）。
 - 现状：**50 局零分歧**（基础/LF/随机/定向/高级板专项），12 类已知缺口全闭合。修 bug 必配 `packages/engine/test/` 回归测试。
-- 注意 ts-node 驱动参考引擎不可用（v5 太旧静默不执行）；一律用仓库根 `npx vite-node`。
+- **有意偏离参考引擎一处**：终轮已 pass 的玩家不再收到充能邀约（规则书虽允许跳过后充能，但终轮魔力无价值、接受=纯亏 VP 必然拒绝）。对拍跑到该场景会分歧，属预期，记 NOTE 跳过。
+- **对拍盲区**：行动序列来自参考记录，踩不进"我们多枚举的非法候选"——枚举类校验只能补定向测试。
+- ts-node 驱动参考引擎不可用（v5 太旧静默不执行）；一律用仓库根 `npx vite-node`。
 
 ## 素材与校准（web 美术）
 
-- 素材在 `packages/web/public/assets/`（个人非商用，不进 git；`assets/README.md` 是法律声明，唯一被 track 的素材文件）。
-- **坐标校准一律写数据文件并配测试**：`sector-calibration.ts`（13 扇区统一 325/352.5/81.25，k0=4）、`ship-calibration.ts`（4 船）、`faction-calibration.ts`（族板模板+override；bescods PI/学院互换、gleens 专属联邦片槽 gleensFedSlot=PI 右侧印刷徽章位）、`research-calibration.ts`（研究板，含 QIC_COVER_RECT）、`panel-calibration.ts`（种族飞船面板 3 穿梭机槽，全族同模板；顶槽印「3-4」仅 3-4 人局用）、`scoreboard-calibration.ts`（实图计分板：6 回合槽/2 终局槽/2 条计数轨/梯形片高级板槽）、`placements.ts`（运行时反推扇区摆放——GameState 不存 placement，按"2 格范围全覆盖 19 格的唯一格"定中心、按布局匹配定旋转；深空三角按内容多重集定面、带镜像旋转匹配定朝向）。
-- 图像处理脚本（裁透明边距/细白边/透视校正）在 `reference/harness/` 与 `.venv`（Pillow/PyMuPDF）。**用户自拍素材**（2026-09）：`cut-faction-panels.py` 从 05/06 照片抠 18 块种族飞船面板（含正反面配对校验，输出 `factions/panels/<id>.png` 400×1240）、`cut-scoreboard-assets.py` 从 01-04 照片抠计分板/梯形扩展片×2/QIC 覆盖板（含 alpha；原照片在 ~/Downloads，不入库）。
-- **四条船板图**：rebellion/eclipse 用 feuerland 官方渲染（2000×621 黑底）；twilight/tfmars 用 Steam TTS 模组（id 3347152196）内嵌官方渲染（3411×1050 黑底，`*_board_render.jpg`）——曾用 BGG 开箱照但背景灰（44-115 亮度）被用户投诉偏白，feuerland 官网确认无这两艘渲染（Wayback 佐证）。取图渠道备忘：BGG 图库可绕 Cloudflare（`api.geekdo.com/api/images?objectid=<id>&objecttype=thing&pageid=N` 列表 + `api/images/<imageid>` 单图）；Steam Workshop 文件用 `api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/` 免 key 拿 file_url。
-- LF 青/粉两色建筑无图：用红/蓝图 + CSS hue-rotate 近似。**青色要 hue-rotate(-65deg) 才与兰提达纯蓝区分**（-35deg 太接近曾被误认为同族）。
-- **AC_blue.png 素材偏色已修**（2026-09-20）：Etchelon 原图 hue≈263°（紫红，其他蓝色建筑均 ≈240°），用 `.venv` PIL HSV 的 H 通道 -16（≈-23°）平移修正（含 trim 版），现 hue=240°。修法：convert('HSV') → H.point((h-16)%256) → 保留 alpha 贴回；低饱和白边/黑描边不受影响。
-- **行动格盖片（action token，2026-09-21 系统性校准）**：素材 `markers/trim/ActionToken.png`（原图 182×149 透明边距大且非方形，trim 后 131×124 内容≈93%，`ACTION_TOKEN_IMAGE` 常量引用）；盖片渲染 width = 内容直径 ≈ 印刷八边形外径。尺寸表（PIL 颜色分割实测）：研究板 `ACTION_TOKEN_SIZE=0.084`（曾 0.034，灰化后完全看不出）；飞船 twilight 0.082 / tfmars 0.088 / rebellion 0.105 / eclipse 0.115（曾统一 ≈热区一半；rebellion/eclipse 的热区 actionSize 与 actionSpaces 中心也一并重测修正——feuerland 图格子相对图幅比 TTS 图大得多，0.055→0.11/0.12）。探索板特殊行动格（gleens +2 航距 / space-giants 2 免费步等印在面板中部的八边形）：`panel-calibration.ts` 的 `PANEL_SPECIAL_SLOT(0.49,0.39)/PANEL_SPECIAL_SIZE 0.44/PANEL_SPECIAL_ACTION`（族→行动 id 映射，仅列引擎已实现项），ExplorationBoard 渲染热区 + 已用盖片置灰 + 点击同「特殊行动」按钮（specialAvailable/onSpecialAction 与 PI 热区同口径透传）。preview 注入：研究板 power1/舰队格盖片 + gleens 面板已用/未用对照块。
-- **地图建筑白边**：BoardSvg `<defs>` 的 `#building-outline` filter（feMorphology dilate radius=1.2 user units + 白色 flood 垫底），应用于 hex-building/附加矿/gaiaformer/拖拽吸附预览；hue-rotate 在 image 自身 style.filter（先转色后由父 g 描边，白边不染）。
-- **研究轨玩家 token**：圆柱形（`.player-dot` 容器 + ::before 顶椭圆亮面 + ::after 柱身 brightness(0.72)，玩家色走 `--pc` CSS 变量），宽 `LEVEL_DOT_FRAC=0.28`（相对等级格容器）。
+- 素材在 `packages/web/public/assets/`（个人非商用）。**坐标校准一律写数据文件并配测试**：`sector-calibration.ts`（13 扇区统一 325/352.5/81.25，k0=4）、`ship-calibration.ts`（4 船）、`faction-calibration.ts`（族板模板+override：specialSlot/ac2ActionSlot/threeStepSlots/gleensFedSlot/LF_PHOTO 矿行/moweyds 矿行/resourceTrack 资源轨——黄钱×2 先推满 15 再推第二条、白矿、蓝知 token）、`research-calibration.ts`（研究板，含 QIC_COVER_RECT）、`panel-calibration.ts`（种族飞船面板，含 `PANEL_SPECIAL_*` 八边形槽）、`scoreboard-calibration.ts`（实图计分板）、`placements.ts`（运行时反推扇区摆放——GameState 不存 placement；深空板 11b/18b 图像面序与数据序不一致，`DEEP_IMAGE_FACE_ORDER` 渲染覆盖，引擎数据不动——对拍口径）。
+- 图像处理脚本在 `reference/harness/` 与 `.venv`（Pillow/PyMuPDF）。用户自拍素材：`cut-faction-panels.py`（抠 18 块种族飞船面板 → `factions/panels/<id>.png`）、`cut-scoreboard-assets.py`（抠计分板/梯形扩展片/QIC 覆盖板；原照片不入库）。
+- 船板图来源：rebellion/eclipse 用 feuerland 官方渲染（2000×621 黑底）；twilight/tfmars 用 Steam TTS 模组（id 3347152196）内嵌官方渲染（3411×1050 黑底）。moweyds 族板图 = BGG 西班牙版开箱照下半块（fetch-assets 走 CROPS 重建）。取图渠道备忘：BGG 图库可绕 Cloudflare（`api.geekdo.com/api/images?objectid=<id>&objecttype=thing&pageid=N` 列表 + `api/images/<imageid>` 单图）；Steam Workshop 文件用 `api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/` 免 key 拿 file_url。
+- LF 青/粉两色建筑无图：红/蓝图 + CSS hue-rotate 近似，**青色必须 hue-rotate(-65deg)**（与兰提达纯蓝区分）。AC_blue 原图偏紫红，fetch 时用 PIL HSV 的 H 通道 -16 修正。
+- 行动格盖片（action token）：`markers/trim/ActionToken.png`（`ACTION_TOKEN_IMAGE`）；渲染宽 = 印刷八边形外径——研究板 `ACTION_TOKEN_SIZE=0.084`、飞船 twilight 0.082 / tfmars 0.088 / rebellion 0.105 / eclipse 0.115；片上盖片（`.tile-used-token`）对准片上的行动格八边形：科技/高级横片锚点 (35%,44%) 宽 46%，助推竖片锚点 (50%,20%) 宽 64%。
+- 地图建筑白边：BoardSvg `<defs>` 的 `#building-outline` filter（feMorphology dilate 1.2 + 白 flood 垫底），hue-rotate 在 image 自身 style.filter（先转色后由父 g 描边）。
+- 研究轨玩家 token：圆柱形（`.player-dot` + ::before 顶椭圆 + ::after 柱身，玩家色 `--pc`），宽 `LEVEL_DOT_FRAC=0.28`；**z-index 恒为 5**（玩家 token 永远浮在最上层，LF 经济覆盖板/QIC 覆盖板 z-index 1 不得遮挡；经济覆盖板位置 ECONOMY_OVERLAY_POS=0.778）。
+- **地图六角格描边**：小格统一**单描边**（`.hex-edge` #5b9be6 细蓝线，叠星球图之上）；**扇区大板块边界**（19 小格一块）用**琥珀金线**（`.sector-edge` #e0a93e 3px；几何 = 枚举扇区格外边，`sectorOutlineSegments` 导出并配几何测试：19 格扇区边界 30 段）。
 
-## 布局（v9 定稿）
+## 布局
 
-- **顶栏三段式**：左区（与左栏同宽）= 盖亚计划标识 + 第 x/6 轮 + 导出对局；中区（与星图水平对齐）= 本轮计分 + 行动按钮组（含情境按钮 + 兑换下拉）；右区（与右栏同宽）= 先手/轮到/已连接 + 离开房间。
-- **左栏两块**：上 = 我的版图 + 正右方竖列【种族飞船面板（LF 实图，上）+ 当回合助推片（下，高 = 版图高 ÷ 2 = `--booster-h`）】（仅 LF 局左栏加宽 `--panel-w`；穿梭机叠加未派显示、已派留空）+ 下方科技/高级/联邦片横条（科技片与研究板同宽 `--rb-tile-w`、联邦片 34px、按获得时间混排）；下 = 对手 TAB 细条（座位色块+行动者指示点）+ 选中对手版图同款组合。2 人局无 TAB。宽屏（>1680px）按 `--ui-k` ≤1.35 放大；**版图/助推器另有全局 0.8× 系数**（底部横条横向防溢出：池随内容定宽 + 舰队 60%，两者不得超过中央宽）。
-- **中央**：星图（滚轮缩放/拖拽平移/双击复位/自由旋转手柄）+ 底部横条 = 助推器池（左，片宽按图比例固定、池随内容收缩、间隙 0.3vh）+ 舰队 2×2（右，60% 宽右对齐）。
-- **右栏**：研究轨道整图（自然宽高比、科技片错落堆叠；**LF 时 QIC 覆盖板盖住右下 3 绿水晶行动格**，引擎同步禁用）+ 计分区 = **实图计分板**（`ScoreboardBoard`：自拍抠图含行星装饰，6 回合片入扇形槽径向旋转、2 终局片入灰面板槽、绿轨按 count 放玩家色点、LF 下接梯形扩展片（按 `scoringExtension` 选面）+ 第 7 高级板槽）+ **常驻计分表**（计分板正下方，无展开态；板面栈按纵横比自适应高度给表让位）；右栏宽由「研究板 1.073 + 计分板 0.981（LF 再 +0.207）× 宽」反推（`--rail-r-w` 按 data-lf 分两档）。
-- **复盘模式**：导入 GameRecord 后布局与对局同构（LeftRail 视角座位版图 + 对手 TAB / 星图 / 右研究计分栏）；回放控制条在**星图正上方**（⏮/◀/▶/⏭/倍速/进度条），顶栏左区 = 标题+轮次+「此处开始对局」（branch_game），右区 = 轮到+退出复盘（对齐「离开房间」）；「视角⇄」按钮在视角版图详情前轮换第一视角。
+- **顶栏三段式**：左区 = 盖亚计划标识 + 第 x/6 轮 + 导出对局；中区（与星图水平对齐）= 本轮计分 + 行动按钮组（含情境按钮 + 兑换下拉）；右区 = 先手/轮到/已连接 + 离开房间。
+- **左栏两块**：上 = 我的版图 + 正右方竖列【种族飞船面板（LF 实图，上）+ 当回合助推片（下，高 = `--booster-h`）】（仅 LF 局左栏加宽 `--panel-w`；穿梭机叠加未派显示、已派留空）+ 下方科技/高级/联邦/圣器片横条（科技片与研究板同宽 `--rb-tile-w`、联邦片 34px、圣器同高按原图比例 344×265、按获得时间混排）；下 = 对手 TAB 细条（座位色块+行动者指示点）+ 选中对手版图同款组合。2 人局无 TAB。宽屏（>1680px）按 `--ui-k` ≤1.35 放大；**版图/助推器另有全局 0.8× 系数**。
+- **中央**：星图（滚轮缩放/拖拽平移/双击复位/自由旋转手柄）+ 底部横条 = 助推器池（左，池随内容定宽）+ 舰队 2×2（右，60% 宽右对齐），两者不得超过中央宽。
+- **右栏**：研究轨道整图（科技片错落堆叠；**LF 时 QIC 覆盖板盖住右下 3 绿水晶行动格**，引擎同步禁用）+ 实图计分板（`ScoreboardBoard`，LF 下接梯形扩展片 + 第 7 高级板槽）+ **常驻计分表**（计分板正下方，无展开态）；右栏宽 `--rail-r-w` 按 data-lf 分两档。
+- **复盘模式**：布局与对局同构（LeftRail 视角座位版图 + 对手 TAB / 星图 / 右研究计分栏）；回放控制条在**星图正上方**；顶栏左区 = 标题+轮次+「此处开始对局」，右区 = 轮到+退出复盘；「视角⇄」轮换第一视角。
 
-## 踩过的坑（勿再犯）
+## 现行规则/交互口径（已定型，勿翻案）
 
-- **seq 双口径（2026-09-21，曾致撤销条整轮不显示）**：服务器 `action_applied.seq` = 行动**落库序号**（= 行动前快照 seq），`snapshot.seq` = 行动后计数（= 前者 +1）。web 端按"检查点以来我的行动"过滤日志时边界必须是 `e.seq >= checkpoint.seq`（`>` 会把自己的行动漏掉）；dismiss 记录也用行动日志口径（`lastMyActionSeq`）而非 `s.seq`。**测试模拟 emit 必须遵守真实口径**（action_applied seq = snapshot seq - 1）——填相同 seq 会把这类 bug 全掩盖。store 的 undo 日志裁剪（`e.seq < msg.seq`）本就同口径。
-- **盖亚机占据的星球他人不可建矿（2026-09-21 规则漏洞修复）**：`computeMineTarget` 曾只排 `hex.building/ship`，漏排 `hex.gaiaformerOf`——对手得以在留置盖亚机的绿星上建矿。规则依据：盖亚机是 structure，建矿要求 "empty (has no structures on it)"；参考引擎同口径（gaiaformer 的 hex 为 occupied，主人建矿走 GaiaFormer→Mine 回收路径）。修复 = 目标检查加 `hex.gaiaformerOf !== idx 时排除`（所有建矿路径共用 computeMineTarget，一处全覆盖）。**教训：对拍发现不了"我们多出的非法候选"**——行动序列来自参考记录，不会踩进多枚举的目标；枚举类校验只能补定向测试。
-- **联邦枚举必须覆盖子集合并解（2026-09-21 线上 bug：应有联邦时按钮全暗）**：旧策略只试单分量/两两合并/全体 MST，漏掉 3+ 分量部分合并（4+2+1=7 这类）。重写为分量子集枚举（≤12 分量护栏，超出回退旧策略）：pv ≥ 阈值且**极小**，连通卫星取 Steiner 最少树（TM 启发式）+ **删卫星后处理**。**极小性的终口径**（两经修正，fed-diff 对拍立功）：形状违规 ⟺ 存在某分量，去掉后剩余 pv 达标、连通、且卫星**严格更少**——规则书 920-923 原文"少 1 星球**且**少 1 卫星才算违规"，与参考 `isOutclassedBy` 同（曾误用"pv 富余即多余"与"卫星不增即多余"，均误删"桥"形状）。**fed-diff.ts**（harness 新成员）：同局面双枚举形状集对拍，12 局验证枚举完备（0 漏；多出候选均合法——参考组合枚举非全子集），用法与结论见 harness/NOTES.md §9。web 交互同步改为**两步式**：「组建联邦」→ 点卫星格（候选格高亮、已选蓝点；无匹配组合报原因；**「最少卫星」快捷按钮**——卫星数最少、并列时选卫星邻接未殖民星球最少的方案，减少未来建筑被吞并）→（同卫星集多组星球时再选组合）→ 选联邦片（选项按钮 + 研究板供应区/船上金框片可直接点）。
-- **随机命中型场景测试的脆弱性**：llm `heuristic-edge` 的 L5+flipToken 测试靠 `playUntil` 随机对局命中场景——联邦枚举变全后随机 AI 行为分布改变（组联邦稀释研究进度），场景系统性消失、换 seed 无效。场景类测试一律**定向构造**（手术改状态），随机命中只用于"必然出现"的宽泛条件。同理，后台起 server/web 等长驻任务必须 `disable_timeout`（600s 默认超时曾杀掉对局中的 server，落库重放可恢复）。
-- **静默拒绝**：服务器错误消息（not-your-turn/illegal-action）曾只写 `lastError` 不上屏。任何拒绝路径必须有可见反馈。
-- **下轮顺序**：曾按固定桌序推进回合，对拍发现应为 pass 顺序。
-- **setup 跳过**：ivits（无起始矿）、LF 新族（extra 阶段才放）、xenos（第 3 矿）、darkanians（extra 阶段）的队列推进靠 `settleSetupSkips` 容忍空枚举。**陷阱：该归一化只在 applyAction 后跑——开局无人触发，LF 新族/ivits 在 seat 0 时开局即死锁**；`GameSession` 构造（含 restore/undo 重放）必须先 `settleSetupSkips(newGame(config))`（曾致 JYMRE3 卡死）。
+- **充能 `chargePower` 全局 I→II 优先**（魔力必须 I 区全转完 II 才能 II 转 III；II→III 连跳贪心已被否决）。**蹭能接受计费 = 按实际充入量−1**（chargePower 内部按可充 token 数自封顶；可充 < 邀约量时按实充计费不白亏 VP；显示层 ActionBar 同步按 min(邀约量, 可充数) 封顶，引擎邀约量保持 pv 原文以保重放兼容）。ambas 案例此口径下 III 上限是 4（"同一 token 一次充能动两格"的连跳算法若再提，先与规则书/参考引擎核实再议）。**改口径有重放副作用**：服务器重启重放会按当时口径重算全部历史充能。
+- **终轮已 pass 玩家不收充能邀约**：规则书允许跳过后充能，但终轮跳过后魔力无价值、接受=纯亏 VP 必然拒绝，故直接不生成邀约（`makeChargeOffers` 过滤 `passedPlayers && round>=6`；非终轮跳过玩家仍正常收邀约——规则书口径）。**有意偏离参考引擎**（对拍分歧记 NOTE）。**重放兼容**：口径前日志里的 charge/decline-charge 过期响应作 no-op 跳过（三层：engine `apply.ts` + server `session.ts` restore/undo 循环；拒绝响应本无状态变更，跳过状态等价）。
+- **收入顺序玩家决策（pending income-order）**：收入同时含 token+充能、**充能 > I 区 token**（I→II 优先下两序才有差异；charge ≤ I 区时新 token 与 II 区旧 token 命运与顺序无关）且加完 token 也转不满时（turn.ts `incomeOrderNeedsDecision`），资源先结、token/充能压入 `state.incomeQueue` 逐个置 pending，玩家二选一先拿豆/先转（actions/income.ts）。`apply.ts settleIncomeSkips` 对非 income-order 行动按 tokens-first 自动冲刷（旧日志重放兼容）；**income-order 行动到来时无待决则 no-op 跳过**（apply.ts + server session.ts restore 循环同款——过宽判定时代记录的 income-order 在精确判定下无待决、两序本一致，跳过是状态等价的，否则恢复即 session-lost）。AI 默认 tokens-first；撤销条豁免（轮初响应类）。
+- **回合完成闸（turnHold）**：非 pass 主行动及其 pending 全部响应完毕后 `state.turnHold`=行动者——actorOf/枚举只认持闸玩家（免费兑换/烧脑/`confirm-turn`），**下一玩家按钮不亮**；`confirm-turn` 放闸（不推进，闸已在主行动时推进过）。pass 直接推进不设闸。**完成回合只有地图下方撤销条一个入口**（[完成]=提交 confirm-turn）。**幻影条规避**：GameScreen 检查点 effect 遇 confirm-turn 快照不重置检查点/不重武装撤销条（否则立刻弹出"无变化"第二撤销条）。**重放兼容两个必经点**：`apply.ts settleTurnHoldSkips`（非持闸玩家行动自动放闸）+ server restore/undo 重放循环**仅当 `player !== turnHold` 时**才给免费行动注入库中 player 列为 actor（持闸玩家自己的免费行动绝不注入——actor 字段改变 stableStringify 会破坏合法性比对）。AI 侧：RandomAgent/测试驱动 actingPlayer 补 turnHold；selfsearch `skipTurnHold`；lookahead `stillMyTurn` 认闸。
+- **撤销条 = 服务器资格镜像（不依赖内存检查点）**：可见性 = 日志里我最后一个回合内**行动**（主行动/免费行动（烧脑/兑换）/setup——免费行动后未做主要行动也出条；被动充能响应、pass、轮初响应、confirm-turn 不算）存在 + 其后无其他真人非响应行动（与 session.undo 尾段校验一致）+ **最后行动之后尚无我的 confirm-turn**（已完成过的回合刷新后不再弹"回魂条"）+ 未收起；**另加防呆强制显示**：confirm-turn 在我 legalActions 且未收起时必显示（否则对手 pending 窗口期点[完成]会因 confirm-turn 不可用而把唯一完成入口永久藏掉）。**[完成] 仅在 confirm-turn 实际提交后才记 dismissedAt**（按钮在 confirm-turn 不可用时禁用）。检查点只在主行动快照时重置（免费行动不重置，增量 = 整回合累计；回合首动是免费行动时照常建立）。充能不可撤销不弹条；对手真人行动后必消失（server 必拒，显示即误导）。增量显示 `display.describeDelta` 含矿/钱/知/Q/魔 I·II·III/VP。
+- **拿板双翻面（researchFlipToken）**：拿高级板（必翻 1 枚绿面联邦标记= `flipToken`）后可升任意轨，升 L5 需再翻第 2 枚（= `researchFlipToken`）；标准板路径升 L5 的翻面仍复用 `flipToken`（重放兼容，旧日志语义不变）。枚举升轨翻面池 = 全部绿面标记按枚扣减拿板用掉的那枚。fold/unfold 规则（upgrade/gain-tech-tile/ship-action/qic 四处同构）：高级板路径 research.flipToken ↔ `researchFlipToken`，标准板路径 ↔ `flipToken`。
+- **同座位多连接共存**：resume 不踢同座旧连接（该座位最后一条连接断开才标离线）；web 被动 close 一律自动重连。session-lost 不清 localStorage token（仅 invalid-token 清）。
+- **先手洗牌**：`GameConfig.turnOrder`（初始行动顺序，缺省座位序）+ server `drawTurnOrder`（种子派生洗牌，异或常数与抽族流去相关）——random/draft 两模式共用，draft 顺位即对局行动顺序。**座位号 ≠ 顺位下标**：turnOrder 的读取点（setupQueue/advanceSetup/turn.ts 回合推进/draft）混用会错配；涉及 turnOrder 的断言必须补非座位序种子（2p [1,0] 用 seed 2，3p [2,0,1] 用 seed 3）。`firstPlayer = turnOrder[0]`；加一个字段要查它的全部读取点是否都被新语义覆盖。重放兼容：无 turnOrder 的旧局默认座位序不受影响；有 turnOrder 且已过第 1 轮的局迁移时按"首个非 setup 行动者"旋转 config.turnOrder 使其首位 = 实际首动座位。
+- **选族 setup 信息区**：`DraftState.preview`（server 用占位族 + 同种子 `buildDraftPreview` 重建局面——引擎 newGame 的 rng 消耗序为 板块→地图→种族，前两项与种族无关故逐格一致）；DraftView 显示 顺位（先手标注）/ 整块实图计分板（ScoreboardBoard 同款：回合片+终局片+星球转化关系）/ 地图预览。规则依据：规则书 setup 先摆图后选族。
+- **盖片（已用标记）由 specialUsed/roundAbilityUsed 驱动；回合结束清空 = 能力刷新，属正常**。
+- **回合顺序**：下轮行动顺序 = 本轮 pass 顺序（不是固定桌序；被动充能/leech 仍按桌序）。
+- **setup 跳过**：ivits（无起始矿）、LF 新族（extra 阶段才放）、xenos（第 3 矿）、darkanians（extra 阶段）的队列推进靠 `settleSetupSkips` 容忍空枚举。**陷阱：该归一化只在 applyAction 后跑**——`GameSession` 构造（含 restore/undo 重放）必须先 `settleSetupSkips(newGame(config))`，否则 LF 新族/ivits 在 seat 0 时开局即死锁。
 - **复盘分支（branch_game）**：复盘当前步可「此处开始对局」——record 截断到当前步发 `branch_game`，服务端重放校验后开单人+AI 房间（申请者坐 review.viewSeat，其余座位 AI 托管；开放真人补位未实现）。终局面/空前缀/越界座位分别报 import-invalid/bad-message/invalid-seat。
-- **科技板位置**：拿板可升哪条轨由开局洗入的 9 个位置决定（`board.techTilePositions`），不是固定的。
-- **参考引擎的 quirk 要对齐而非"修正"**：leech 空碗不邀约、fed1 无绿面、setup 放置不产生邀约、ship-credit 建矿逐项扣费（不收 gaia 费/不得 proto 分/排除 asteroid）。
-- **AI 驱动永不卡死**：driveAI 全 try/catch + legal[0] 兜底；agent.decide 对任何合法行动集必须返回合法行动（safeScore）。
-- **初始地图偏小**：默认 21.6° 旋转用旋转矩形外接框当 viewBox，把包围框无谓放大 ~30%。改用 `rotatedPointsViewBox`（旋转后 hex 中心紧致包围盒）。
+- **seq 双口径**：服务器 `action_applied.seq` = 行动**落库序号**（= 行动前快照 seq），`snapshot.seq` = 前者 +1。web 端按"检查点以来我的行动"过滤日志时边界必须是 `e.seq >= checkpoint.seq`；dismiss 记录用 `lastMyActionSeq`。**测试模拟 emit 必须遵守真实口径**（action_applied seq = snapshot seq − 1）——填相同 seq 会把这类 bug 全掩盖。
+- **draft 阶段房间只在内存**（不落库不打日志，seed 随进程丢失不可复现）——对策：seed 大厅可见（RoomState.seed 已知即下发，Lobby 建房可填、房间视图显示值），对局开始即落库。
+- **探索飞船候选**：`exploreCandidates` = 普通 explore-ship + 射程加成特殊行动（gleens-range/booster5/ship-range3）的 ship 目标，同船去重；FleetPanel 探索按钮与「探索飞船」类别同口径（`canExploreShip`）。
+- **联邦枚举（极小性终口径）**：分量子集枚举（≤12 分量护栏，超出回退旧策略），pv ≥ 阈值且**极小**；形状违规 ⟺ 存在某分量，去掉后剩余 pv 达标、连通、且卫星**严格更少**（规则书"少 1 星球**且**少 1 卫星"，与参考 `isOutclassedBy` 同）。web 两步式交互：点卫星格（「最少卫星」快捷键：卫星数最少、并列选卫星邻接未殖民星球最少的方案）→（同卫星集多组星球时再选组合）→ 选联邦片（选项按钮 + 研究板供应区/船上金框片可直接点）。
+
+## 踩过的坑（方法论）
+
+- **随机命中型场景测试的脆弱性**：场景类测试一律**定向构造**（手术改状态），随机命中只用于"必然出现"的宽泛条件。
+- 后台起 server/web 等长驻任务必须 `disable_timeout`（600s 默认超时曾杀掉对局中的 server）。
 - **截图验证**：chrome headless（`--headless --screenshot --window-size --force-device-scale-factor=2`）+ preview.html（不进生产 bundle）是 UI 验收主路径。
+- **AI 驱动永不卡死**：driveAI 全 try/catch + legal[0] 兜底；agent.decide 对任何合法行动集必须返回合法行动（safeScore）。
+- **代客操作（ws 直连改对局）**：node 脚本连 ws://localhost:8430/ws，DB 读 seats 表 token → resume → submit_action/undo。stableStringify 合法性要求行动体与枚举逐字节一致；脚本必须逐步断言精确 seq 防旧消息混淆（undo 是单行动语义，多回合回退逐座位交替）。脚本放 `reference/harness/`。
 
 ## AI（heuristic2，v2 估价框架）
 
@@ -103,26 +124,18 @@ LLM 预筛/兜底与 bench 基线）。架构参照 BrassBirmingham 的 CFG + ov
 代码在 `packages/llm/src/heuristic2/`：
 
 - `cfg.ts`：全部权重集中在 `BASE_CFG`（每个参数注明攻略/bench 来源）；**变体显式
-  区分**——`LF_DELTA` 仅在 `lostFleet=true` 时深合并（扩展改变估价体系：LF 行星类型
-  升值、探船升值等）。版本/调参差异 = `DeepPartial<Cfg>` overrides（`createEvalPlugin`
-  的 `tuneEnvVar: GAIA_TUNE_V2` 可注入 JSON 做消融）。
+  区分**——`LF_DELTA` 仅在 `lostFleet=true` 时深合并。调参注入：`createEvalPlugin`
+  的 `tuneEnvVar: GAIA_TUNE_V2` 可注入 JSON 做消融。
 - `context.ts`：`evalCtx(state, seat)` 合并链 BASE→LF_DELTA→插件 overrides→族增量，
   WeakMap 缓存（带 overrides 不缓存——调参路径）。
-- `values.ts`/`score.ts`：行动快评（纯函数不仿真，VP 等值）。资源表用社区量化结论
-  （BGG 2122654：ore=knowledge=3、QIC=4、power token=2、充能 0.75、credit=1）；
-  分阶段权重（R1-2 经济/R3-4 转化/R5-6 VP 冲刺：收入贴现、库存贬值、leech 意愿
-  R1-4>1/R6<1）；回合计分板看本轮+下轮（下轮 nextRoundMult 折预期）；第 3 联邦
-  额外奖励（社区共识：3 联邦是获胜底线）。
+- `values.ts`/`score.ts`：行动快评（纯函数不仿真，VP 等值）；分阶段权重（R1-2 经济
+  /R3-4 转化/R5-6 VP 冲刺）；回合计分板看本轮+下轮（下轮 nextRoundMult 折预期）。
 - `position.ts`：局面叶估值（已入账 VP + 库存×阶段权重 + 总收入 NPV + 研究轨里程碑
-  + 持有片折算 + 联邦重结算期望 + **终局计分零和位次期望**（finalCount 实时比位次，
-  并列按引擎口径均分））。
-- `lookahead.ts`：按行动域 topK 剪枝（Brass 经验 K 大反而差）→ applyAction(assumeLegal)
-  仿真 → 仍我方行动则 +alpha×次动分 → +leafWeight×叶估值。仿真失败退回静态分。
-- `factions.ts`：种族插件 `FactionHooks { cfg(variant), adjustAction, adjustFinal }`
-  （Nevlas/Taklons 充能升值、Gleens 盖亚矿+2、Geodens PI 后新类型+6、Lantids 行星
-  类型/盖亚终局归零、Ivits 终局减半+早联邦奖励、Terrans 仅 base 给盖亚溢价等）；
-  `FACTION_STRENGTH` 按变体分表的 draft 强度表（LF 里 Terrans 底层、Ivits 最强），
-  server draft AI 已接线（`pickFactionByStrength`）。
+  + 持有片折算 + 联邦重结算期望 + **终局计分零和位次期望**）。
+- `lookahead.ts`：按行动域 topK 剪枝 → applyAction(assumeLegal) 仿真 → 仍我方行动
+  则 +alpha×次动分 → +leafWeight×叶估值。仿真失败退回静态分。
+- `factions.ts`：种族插件 `FactionHooks { cfg(variant), adjustAction, adjustFinal }`；
+  `FACTION_STRENGTH` 按变体分表的 draft 强度表（server draft AI 已接线）。
 
 验证方法（指标 = **内战均分** + 对基线胜率；同代码镜像局必然完全重复，镜像只对
 异构对抗有意义）：
@@ -135,91 +148,50 @@ npx vite-node packages/llm/bench/run.ts --agents heuristic2,heuristic2,heuristic
 npx vite-node packages/llm/bench/run.ts --agents heuristic2,heuristic,heuristic2,heuristic --games 10 --concurrency 8
 ```
 
-v2 数据（4p LF 固定池，2026-09-18 三轮调优+自我深搜后）：内战均分 ~88（v1 为 50.6）；
-**每局最高分均值 114，10/10 局破百（≥100 VP）**，峰值 126；2p 最高均值 100、
-5/10 破百；2v2 对抗 v1 胜率 42.5% vs 10.0%。与人类（150-200）的剩余差距：
-联邦平均 ~1 个（人类 3 个——几何上孤立分量太多，9-13 卫星的全体合并形状被
-深搜正确拒绝）、高级片 ~0.1 个/人（四条件难同时满足）、QIC 经济微弱。
-再上一档需要区域级多步规划（从 setup 起布局 2-3 个联邦区）。
+v2 数据（4p LF 固定池）：内战均分 86.1（v1 为 50.6）、最高均值 105.0、联邦 3.6 个/局。
+与人类（150-200）的剩余差距：发展度（人均 15.6 pv vs 人类 ~26 pv）→ 联邦 0.9 个/人
+（人类 3 个）、高级片 ~0.1 个/人。已验证的调优结论（勿再走弯路）：
 
-调优方法论（本仓已验证的结论，勿再走弯路）：
-
-- **前瞻与叶估值是主力**：关前瞻 −14 分；leafWeight 1.2 是峰值（0.6/1.6/2.0 都更差）；
-  alpha 0.5 优于 0.7；候选 topK 加宽更差（Brass 同结论）。
-- **"富"叶估值优于去重叶估值**（−9 分）：库存/收入/里程碑与行动分口径重叠不是 bug，
-  候选间比较要的是位置完整排序。leaf 还含联邦组潜力（(pv/7)² 凸形）。
-- **资源量纲 2.5/2.5/4（ore/knowledge/qic）是峰值**（2/2/3 与 3/3/4.5 都更差）——
-  社区交换表（3/3/4）对 AI 偏"抠"，会拒绝必要扩张。
-- **联邦凑组（分量感知，score.ts ownComponents）**：贴单分量给凸形（pv≤5 峰值，
-  超过贬值——分量养太大 = 一个联邦吃掉所有建筑，毁掉潜在外援联邦）；合并两个
-  分量轻罚（0.5×pv）；新种子按 2 格桥接 pv 给凸形。**禁入区（已入联邦格+邻格）
-  不计入新组 pv**，否则拉力被已完成的联邦吸走。初始矿无法聚拢（母星全图仅 2-3 格）。
-  孤立选址惩罚与 clusterMult>1（早期加强）都被证明伤扩张，勿加。
-- **联邦标记（values.ts federationTokenValue）**：绿面票按稀缺敏感计价——手里没有
-  其他未翻绿面票时（首张高级片入场券）按 advTicketExpectation（接近开启槽位的最佳
-  高级片×0.7×轮数折扣）显著加价，已有票只 +1.5。L5 翻面门票定价 3+0.25×资源面，
-  且 L4 轨+可覆盖片在手时再 +6（别让 L5 烧掉高级片的票）。
+- **前瞻与叶估值是主力**：关前瞻 −14 分；leafWeight 1.2 是峰值；alpha 0.5 优于 0.7；
+  候选 topK 加宽更差（Brass 同结论）。"富"叶估值优于去重叶估值（−9 分）。
+- **资源量纲 2.5/2.5/4（ore/knowledge/qic）是峰值**——社区交换表（3/3/4）对 AI 偏"抠"。
+- **leech 阶段倍率 early 1.4 / mid 1.1 / late 0.7 是峰值**——深搜已能较好处理充能时机。
+- **联邦凑组（分量感知，score.ts ownComponents）**：贴单分量给凸形（pv≤5 峰值）；
+  合并两个分量轻罚（0.5×pv）；新种子按 2 格桥接 pv 给凸形。**禁入区（已入联邦格+邻格）
+  不计入新组 pv**。孤立选址惩罚与 clusterMult>1 都伤扩张，勿加。已组联邦按满值组计入
+  潜力（否则深搜系统性拒绝组建）。
+- **联邦标记（values.ts federationTokenValue）**：绿面票稀缺敏感计价——无其他未翻
+  绿面票时按 advTicketExpectation 显著加价，已有票只 +1.5。L5 翻面门票 3+0.25×
+  资源面，L4 轨+可覆盖片在手时再 +6。
 - **第二座学院给惩罚**（6o+6c 极贵、AC2 无收入轨）；TS 给固定溢价（经济骨干+电力密度）。
+- 多簇联邦潜力 + deficitBoost、LF 飞船拉力（earlyShipBonus + vpDeficitPull）消融均拖分
+  且未推动目标行为——默认中性化（代码保留，消融位见 cfg 注释）。
 - bench 工具：`diagnose.ts`（终局面貌+行动直方图+机会vs选择+VP 构成+联邦组探测）、
   `probe.ts`（指定座位逐决策 Top 候选+组 pv）；`GAIA_BENCH_FACTIONS` 可换固定池。
 
-深搜（selfsearch.ts，自我深搜"假设不碰撞"，**当前默认开启**）：
+深搜（selfsearch.ts，自我深搜"假设不碰撞"，**默认开启**）：
 
 - 只展开我的行动序列，对手占位（主阶段恒 pass——直接构造
   `{type:'pass', booster: 供应[0]}`（不能续用同款，见 engine pass.ts）免枚举；
-  充能恒拒绝；setup/pending 取 legal[0]）。depth=3（我的 3 个主行动）+
-  根节点 0.8×最优+0.2×次优加权（brittle plan 对冲）。
-- 实测：4p 最高均值 114、10/10 破百（纯静态+2ply 时 ~95、1/3）；2p 最高均值 100。
-  耗时：2p ~85s/局、4p ~270s/局（在线可接受，aiPaceMs 兜底；bench 用并发跑）。
-- max^n（search.ts）弃用保留：全座位深搜成本爆炸（4p 需 5-6 ply 才到我下动，
-  ~7 分钟/局）。深搜成本主要在**每节点的 enumerateActions+静态评分**，任何
-  "对手也要枚举"的设计都不可行；剪枝帽随层数衰减是必须的。
+  充能恒拒绝；setup/pending 取 legal[0]）。depth=4 + 根节点 0.8×最优+0.2×次优加权
+  （brittle plan 对冲）。depth5 紧帽抬下限压上限，不采用。
+- 成本主要在**每节点的 enumerateActions+静态评分**，任何"对手也要枚举"的设计都
+  不可行（max^n search.ts 弃用保留）；剪枝帽随层数衰减是必须的。
 - 提速方向：evaluateState 按 stableStringify 备忘、根候选帽收紧、预算按阶段自适应。
+
+## BGA 对局拉取
+
+- 脚本 `tools/bga/bga-pull.ts`（cookie 在 `~/Projects/credentials/bga-cookies.txt`，只按路径
+  读取，值不进对话/git）；原始 cache 在 `reference/bga-cache/`（gitignored），蒸馏产物在
+  `data/bga/`（git 跟踪）。统计：`bga-analyze.ts`（日志维度）/ `bga-stats.ts`（摘要维度）。
+- 经验：getRanking 可用；fetch 必须 20s 硬超时（undici 假死）；logs 段 200 桌/批；
+  复盘保留期 ~400 天；archive 生成异步需 12s/25s 两轮轮询才标死；会员硬限额宽。
+- 已验证的人类基准：联邦 3.22 个/人、研究 15.4 步/人（AI 目前约 1/4）。
 
 ## 待办/已知缺口
 
 - LLM 决策链已实现但需 ANTHROPIC_API_KEY 才启用（预筛仍走 v1 scoreAction）。
 - Solo Automa 未实现（项目不做单人）。
-- 推进片池（BoostersStrip）位置用户后续还要调（当前在中央底部左侧）。
-
-## 2026-09-21 批量完成记录（原待办均已解决）
-
-- **moweyds 高清族板图已补**（BGG 396802 西班牙版开箱照 9503664 下半块 Octopoides，2950×1879，与 9503663 同组照片同版型，PlayerMat 共用 LF_PHOTO 标定仅另给宽高比；曾误用的 wellplayed 图实为 space-giants 板已撤删；fetch-assets.mjs 改走 CROPS 裁剪可重建；2 人局固定不用叛乱号系规则原文非 bug——2 人局规则明示移除 Rebellion，「3Q 换科技片」是其专属行动格）。选族悬浮面板（DraftView draft-hover-pop）右侧并放该族飞船板块图（仅 LF 局；族板/飞船板块同高 min(357px,24.3vw)，宽度自适应）。
-
-- **2 人局科技片按人数**：基础 9 种供应 = `min(t.count, playerCount)`（setup 两处；参考引擎同口径）；船上科技片引擎本来就是"claims 模型"（`techTileClaims` 记已拿玩家、满人数才移除——功能即人数块），FleetPanel 渲染改为错落堆叠（剩余 = 人数 − claims 数，同研究板堆叠样式）。fuzz 守恒式按 9×人数+船上拷贝更新。
-- **事件日志全量**：server `GameSession.actionLog`（与 actions 表同步：restore/undo 重放重建、submitAction 追加）→ `snapshotFor` 带全量 `log` → protocol snapshot 加可选 `log` 字段 → web store 采用即替换（删除 LOG_CAPACITY 环形截断；import_game 复盘同样带 log）。
-- **盖片系统性校准**：研究板/4 船行动格盖片放大至印刷格外径（尺寸见素材章节）；特殊行动盖片补全——tech9/advtech3/11/13（TechBoosterStrip 片盖 token 置灰）、booster4/5（PanelBoosterStack 助推片）、ac2（PlayerMat ac2Slot）、gleens/space-giants 面板八边形（panel-calibration PANEL_SPECIAL_*）。**片上盖片定位**（`.tile-used-token`）：对准片上的行动格八边形图标而非角落——科技/高级横片锚点 (35%,44%) 宽 46%（八边形在左中，补偿 token 图 93% 内容填充后视觉等大）；助推竖片锚点 (50%,20%) 宽 64%（八边形在顶部；曾放右下角一半悬空被用户指出"歪"）。
-- **穿梭机按族色染色**：PIL 亮度映射预染 9 色（`lf/misc/shuttle/<color>.png`，`shuttleImage(color)`），ExplorationBoard 未派遣穿梭机与 FleetPanel 槽位穿梭机按座位族色选图。
-- **选族悬浮面板**：DraftView 种族按钮 hover/focus 显示右侧固定族板大图（`factionBoardImage`，moweyds 回退头像；pointer-events none 不挡操作）。
-- **Tinkering tiles 单图**：官方合影裁 6 块抠白底（`lf/misc/tinkering/tinkN.png`，`tinkeringTileImage`；内容映射 tink1=1步/tink2=4pw/tink3=1q/tink4=3步/tink5=3k/tink6=2q），ActionBar tinkering 选项按钮显示单图。
-- **Twilight/TF Mars 船板图**：早已换 TTS 模组官方渲染（3411×1050 黑底，ship-calibration 注释），旧"BGG 开箱照"条目过时删除。
-
-## 2026-09-22 批量完成记录（二）
-
-- **同座位多连接共存（接管机制废除）**：ws.ts 删 `kickSeatConns`（resume 不再踢同座旧连接，`handleDisconnect` 仅当该座位最后一条连接断开才标离线、广播照旧每连接各自发快照）；web store 删 owner 标记/`takenOver`/`reclaim`（被动 close 一律自动重连），App.tsx 删接管画面。两地同控一座位两端同步可用；服务器重启后客户端静默恢复。**注意：旧 server（kick 版）下用脚本 resume 他人 token 会把其客户端踢进接管画面（stale）——新 server 已无此问题。**
-- **收入充能顺序玩家决策（pending income-order）**：充能口径为 **I→II 优先**（用户明确定口径："魔力必须是 1 全转完 2 才能 2 转 3"；曾短暂改 II→III 优先连跳追求 III 最大化，实战反馈违反直觉已回退）。触发条件（turn.ts `incomeOrderNeedsDecision`）：收入同时含 token+充能、充能 > II 区 token（顺序才有差异）且加完 token 也转不满（容量 2×I+II）；满足则资源先结、token/充能压入 `state.incomeQueue` 逐个置 pending，玩家二选一（**先拿豆还是先转魔力**，actions/income.ts；用户："收入阶段先获得魔力豆还是先转魔力是可自定义的"）。`apply.ts settleIncomeSkips`：非 income-order 行动到来时按 tokens-first 自动冲刷（旧日志重放/失同步兼容，冲刷连带跑盖亚阶段）。UI：ActionBar pending 条双按钮（显示当前三区分布）；AI 默认 tokens-first；撤销条豁免（轮初响应类）。**注意 ambas 案例**：该口径下 III 上限是 4（用户曾算 5——那需要同一 token 一次充能动两格的连跳；若用户再提，连跳规则待与规则书/参考引擎核实后再议）。
-- **gain-tech-tile 升 L5 flipToken 丢失修复**（枚举↔apply 一致性潜伏 bug，replay 轨迹变化暴露）：pending.ts 枚举映射曾丢 `choice.research.flipToken`，导致枚举出无 flipToken 的 L5 推进、apply 抛 no-flippable-token 崩对局；已补映射 + 回归测试。
-- **先手洗牌**：引擎 `GameConfig.turnOrder`（初始行动顺序，缺省座位序，校验排列）；server `drawTurnOrder`（种子派生洗牌，异或常数与抽族流去相关）——random/draft 两模式共用，draft 顺位即对局行动顺序；规则依据 "Determine a first player using the method of your choice"。**曾固定座位 0 先手（用户反馈）。**
-- **选族界面 setup 信息区**：`DraftState.preview`（server 用占位族 + 同种子 `buildDraftPreview` 重建局面——引擎 newGame 的 rng 消耗序为 板块→地图→种族抽取，前两项与种族无关故逐格一致）；DraftView 显示 顺位（先手标注）/ 回合计分片 / 终局计分片 / 地图预览（BoardSvg）。规则依据：规则书 setup 先摆图后选族。
-- **探索飞船合并射程加成候选**（gleens +2 航距到不了 TF Mars 复盘）：`exploreCandidates` = 普通 explore-ship + 射程加成特殊行动（gleens-range/booster5/ship-range3）的 ship 目标，同船已有普通候选则去重；FleetPanel 探索按钮与「探索飞船」类别同口径（`canExploreShip`）。注：此前飞船路径本身合法（用户卡点 = 加成候选只在特殊行动流里），ship-terraform-step 费用模型（免 gaia 费/排除 asteroid）经核为参考引擎原文行为（spaceship-actions.ts），lantids (1,2) proto 经船恰好付得起（7o）——均非 bug。
-- **bescods 族板能力八边形热区**：faction-calibration 加 `specialSlot`（bescods 右上印刷八边形 0.867,0.219）+ PlayerMat `BOARD_SPECIAL_ACTION`（bescods→bescods-up），热区/已用盖片/onSpecialTile 直提与面板八边形同口径。
-- **moweyds/tinkeroids 3 铲星球标注**：faction-calibration `threeStepSlots`（轮盘下三小格，两族分别实测），PlayerMat 按 `p.terraformThreeStep` 渲染 PLANET_COLORS 色块。
-- **盖亚机放大**：`GAIAFORMER_WIDTH` 0.062→0.078（棋子图内容占比仅 ~42%，现可见内容 ≈ 槽位八边形）。
-- **代客操作脚本**（reference/harness/，gitignored）：`admin-undo.ts`（读库取 token → resume+undo）、`admin-submit.ts`（代提交行动）；探针若干（probe-lantids-mine / probe-gleens-explore / probe-explore-candidates / probe-charge-fixtures / probe-turnorder 等）。
-
-## 2026-09-22 批量完成记录（三）
-
-- **充能口径回退**：`chargePower` 全局 **I→II 优先**（用户明确定口径"魔力必须 1 全转完 2 才能 2 转 3"；曾改 II→III 优先连跳被实战否决）。**注意重放副作用**：改口径后服务器重启重放会用当时口径重算全部历史充能——玩家看到的分布会随口径切换变化（本次正是如此暴露）。ambas 案例（III 4 vs 5）若再提：5 需要同一 token 一次充能动两格（连跳），规则口径待与规则书核实。
-- **撤销条改服务器资格镜像、不再依赖内存检查点**（GameScreen）：可见性 = 日志里我最后一个回合内行动（主行动/免费/setup，排除 charge/decline/pass/轮初响应）存在 + 其后无其他真人非响应行动（与 session.undo 尾段校验一致；pass 也算阻挡）+ 未收起；检查点仅用于增量显示与"未进新一轮"判定。修复刷新/重连丢检查点导致的"建造后无撤销按钮"。用户答疑：自己撤销条在对手真人回合内行动后消失是设计如此（服务器必拒）；对手充能响应不会让它消失。
-- **moweyds 族板矿行单独校准**（faction-calibration）：矿行印刷与 darkanians 不同（实测槽 x 起始 0.1578 间距 0.0485 vs LF_PHOTO 0.1707/0.0506），mineSlots 单独给值；TS/实验室/PI/学院行实测与 LF_PHOTO 一致不动。
-- **能量环可视化**：moweyds-ring 在地图 hex 渲染改为贴近六边形边缘的醒目蓝环（深底 #0b1c2c 0.15 + 亮蓝 #3fa8ff 0.085，r=0.80×HEX_SIZE；powerring.png 实物图太暗弃用）。
-- **圣器并入版图下方横条**（TechBoosterStrip 末尾，曾独立一行在资源条下）：`.tech-booster-strip .tile-img.artifact` 与科技片同高（0.7528×--rb-tile-w）宽按原图比例（344×265）。
-- **盖亚机放大**（前条）：`GAIAFORMER_WIDTH` 0.062→0.078（棋子内容占比仅 42%，现可见内容≈槽位八边形）。
-
-## 2026-09-22 批量完成记录（四）
-
-- **回合完成闸（turnHold，"等他彻底完成才亮"）**：非 pass 主行动及其 pending 全部响应完毕后，advanceTurn 照常推进 currentPlayerIdx，但 `state.turnHold` 置为行动者——actorOf/枚举只认持闸玩家（免费兑换/烧脑/`confirm-turn`），**下一玩家按钮不亮**；`confirm-turn` 放闸（不推进，闸已在主行动时推进过）。pass 直接推进不设闸。web：撤销条[完成]改提交 confirm-turn（兼本地收起）；ActionBar 新增 turnhold-banner「完成回合」常驻入口（撤销条被收起也能放闸）；最近行动行跳过 confirm-turn。兼容：`apply.ts settleTurnHoldSkips`（非持闸玩家行动自动放闸，旧日志重放/失同步）+ server restore/undo 重放循环同口径放闸并**仅在非持闸玩家行动时给免费行动注入库中 player 列**（否则缺省行为人会误归持闸玩家；持闸玩家自己的免费行动不注入——actor 字段会改变 stableStringify 破坏合法性比对）。AI：RandomAgent/各测试驱动 actingPlayer 补 turnHold；selfsearch 深搜 `skipTurnHold`（confirm-turn 是记账步骤，自动跳过保持搜索语义）；lookahead `stillMyTurn` 认闸（主行动后的免费行动次动分恢复触发）。**注意**：此类语义闸改动会让重放口径变化——server restore 的 player≠actorOf 完整性校验与合法性 stableStringify 比对是两个必经兼容点。
-- **ac2 八角片热点**：faction-calibration 加 `ac2ActionSlot`（基础板实测 (0.636,0.60) 在学院槽正下方；LF 板与槽同心回退 ac2Slot），PlayerMat 已建成未用 → 热点直发（onSpecialTile('ac2')），已用盖片同步移到八边形位（曾错放在学院槽）。
-- **探索板特殊八角片直进**：ExplorationBoard 特殊格改走 onSpecialTile（曾走通用「特殊行动」菜单——点格伦 +2 还得再选一次 +2 片）；PanelBoosterStack 透传。
-- **撤销条改服务器资格镜像**（前条补充）：修复刷新/重连丢检查点导致的"建造后无撤销按钮"。
-- **盖片系统补全**：PI 技能已用盖片（PlayerMat `PI_SPECIAL_ACTION`：moweyds-ring/ambas-swap/firaks-down/ivits-sp/tinkeroids-tile，specialUsed/roundAbilityUsed 双口径，盖在 piSlot）；格伦 +2 等面板八边形盖片复查正常（ExplorationBoard specialUsed 驱动；**回合结束 specialUsed/roundAbilityUsed 清空属正常——盖片消失=能力刷新**）。
+- AI 优化 goal（暂停中）：联邦数朝 ≥3 推进；更详细的资源/收入/分数折算估价；LF 前期
+  上飞船优先度 + 登船 −5VP 在低分（<5 VP）场景的折扣优先。
+- BGA 拉取（进行中）：日志段收尾 → 恢复 500 玩家枚举 → 跑统计报告。
