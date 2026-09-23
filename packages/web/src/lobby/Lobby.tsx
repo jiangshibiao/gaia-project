@@ -1,5 +1,5 @@
 /**
- * 大厅与房间等待视图（M2c，架构照 Brass web 适配盖亚协议）。
+ * 大厅与房间等待视图（架构照 Brass web 适配盖亚协议）。
  * - Lobby：创建房间（昵称 + 人数 2-4 + Lost Fleet 开关 + AI 席位数（固定内置
  *   启发式，无难度选项）+ 可选种子）/ 加入房间（昵称 + 房码）/ 导入复盘（粘贴
  *   记录 JSON 或选文件 → import_game，服务器重放校验通过进入复盘模式，失败错误
@@ -364,11 +364,13 @@ export function RoomView({ store }: { store: GameStore }): ReactElement {
           {room.code}
         </p>
         <CopyCodeButton code={room.code} />
-        {room.customSeed ? (
-          <p className="seed-badge" data-testid="custom-seed-badge">
-            房主指定了种子
+        {room.seed !== undefined ? (
+          <p className="seed-badge" data-testid="custom-seed-badge" title="建房时填入同一种子可复现同一张地图">
+            种子 {room.seed}
           </p>
-        ) : null}
+        ) : (
+          <p className="seed-badge" data-testid="custom-seed-badge">种子：开局时随机</p>
+        )}
         <p className="config-line" data-testid="config-line">
           {room.config.playerCount} 人局 · {room.config.lostFleet === false ? '基础版' : 'Lost Fleet'}
           {' · '}

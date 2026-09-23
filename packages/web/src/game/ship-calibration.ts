@@ -14,9 +14,8 @@
  * 例外：金框联邦标记不按图宽比例——固定 34px（.tile-img.fed.gold），
  * 与计分区联邦标记等大，fedToken 仅提供槽位中心。
  *
- * 注意：twilight 与 tfmars 已换 BGG 西班牙版开箱高清正面照
- * （twilight 2865×936 / tf-mars 2865×929，平整无透视，解决旧渲染图模糊投诉），
- * 坐标按新图重新标定；Rebellion 2 人局不出现但坐标照常给出。
+ * 图来源见各船条目注释与 assets README；rebellion 2 人局不出现（规则），
+ * 坐标照常给出。
  */
 import type { ShipId } from '@gaia/engine';
 
@@ -59,8 +58,8 @@ export const SHIP_CALIBRATION: Record<ShipId, ShipCalibration> = {
       { x: 0.228, y: 0.641 },
       { x: 0.228, y: 0.82 },
     ],
-    // 行动格中心/外径 2026-09-21 PIL 颜色分割重测（外轮廓 ≈300px）：
-    // 盖片放大至刚好盖住印刷八边形（曾 0.045 不足半径，用户看不出已盖）
+    // 行动格中心/外径按 PIL 颜色分割标定（外轮廓 ≈300px）；
+    // 盖片直径刚好盖住印刷八边形才可辨识
     actionSpaces: [
       { x: 0.3294, y: 0.5214 },
       { x: 0.4428, y: 0.5076 },
@@ -89,8 +88,7 @@ export const SHIP_CALIBRATION: Record<ShipId, ShipCalibration> = {
       { x: 0.203, y: 0.62 },
       { x: 0.203, y: 0.797 },
     ],
-    // 行动格中心/外径 2026-09-21 PIL 重测（外轮廓 ≈230px = 0.115；
-    // 旧 actionSize 0.055 不足一半、盖片 0.026 仅 1/4，热区也偏小）
+    // 行动格中心/外径按 PIL 标定（外轮廓 ≈230px = 0.115 图宽）
     actionSpaces: [
       { x: 0.3523, y: 0.5829 },
       { x: 0.468, y: 0.5709 },
@@ -117,8 +115,7 @@ export const SHIP_CALIBRATION: Record<ShipId, ShipCalibration> = {
       { x: 0.22, y: 0.633 },
       { x: 0.22, y: 0.82 },
     ],
-    // 行动格中心 2026-09-21 PIL 重测（外轮廓 ≈325px，actionSize 0.095 保持；
-    // 盖片 0.045→0.088 刚好盖住八边形）
+    // 行动格中心按 PIL 标定（外轮廓 ≈325px；盖片 0.088 刚好盖住八边形）
     actionSpaces: [
       { x: 0.372, y: 0.3771 },
       { x: 0.4883, y: 0.3838 },
@@ -142,8 +139,7 @@ export const SHIP_CALIBRATION: Record<ShipId, ShipCalibration> = {
       { x: 0.283, y: 0.608 },
       { x: 0.283, y: 0.788 },
     ],
-    // 行动格中心/外径 2026-09-21 PIL 重测（外轮廓 ≈250px = 0.125；
-    // 旧 actionSize 0.055 不足一半且中心下偏约 0.02-0.03）
+    // 行动格中心/外径按 PIL 标定（外轮廓 ≈250px = 0.125 图宽）
     actionSpaces: [
       { x: 0.3992, y: 0.4235 },
       { x: 0.5158, y: 0.4316 },

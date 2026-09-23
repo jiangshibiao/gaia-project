@@ -1,27 +1,26 @@
 /**
- * 对局画面（v6 布局重构）：**顶栏 + 左族板栏 + 中央星图 + 右研究/计分栏**。
+ * 对局画面：**顶栏 + 左族板栏 + 中央星图 + 右研究/计分栏**。
  *
- * - 顶栏（TopActionBar）：左 = 标识 + 进度信息（轮次/本轮计分/终局/先手/
- *   当前行动者/连接态）；右 = 行动按钮组（当前可用高亮）+ 兑换下拉 + 离开房间；
- * - 左栏（v7 两块布局，LeftRail）：上 = 我的版图 + 科技/推进实图小横条；
+ * - 顶栏（TopActionBar）三段式：左 = 标识 + 轮次 + 导出对局；
+ *   中 = 行动按钮组（当前可用高亮）+ 兑换下拉；右 = 先手/轮到/连接态 + 离开房间；
+ * - 左栏（两块布局，LeftRail）：上 = 我的版图 + 科技/推进实图小横条；
  *   下 = 对手版图（TAB 细条切换，当前行动者带指示点；2 人局免 TAB）；
- *   宽度 --mat-w（较 v6 略收窄让地图更宽），当前行动者高亮边框，
- *   点击"详情"弹完整面板 modal；
+ *   宽度 --mat-w，当前行动者高亮边框，点击"详情"弹完整面板 modal；
  * - 中央：BoardSvg 星图占满剩余高度（滚轮缩放/拖拽平移/双击复位/hex 交互/
- *   拖拽建矿升级不变）；底部横条 = 左助推器池（BoostersStrip）+ 右舰队 2×2
- *   （FleetPanel，v7 右移）；pending/setup/选择对话为地图顶部浮动条（ActionBar）；
+ *   拖拽建矿升级）；底部横条 = 左助推器池（BoostersStrip）+ 右舰队 2×2
+ *   （FleetPanel）；pending/setup/选择对话为地图顶部浮动条（ActionBar）；
  *   事件日志为地图左下角可折叠浮层；
  * - 右栏：上 = 研究轨道整图（ResearchBoard，ResizeObserver 动态 scale）；
  *   下 = 计分区（ScoreboardBoard 实图计分板：回合计分片入扇形槽 + 终局片入灰面板槽
  *   + 绿轨计数点 + LF 梯形扩展片/第 7 高级板槽；下方常驻计分表 ScoreTable）。
  *
- * 选择状态机协作（不变）：
+ * 选择状态机协作：
  * - 本组件持有 selection（interactions.Selection），新快照（seq 变化）自动清空；
  * - 棋盘点击：当前问题为 hex 字段且命中高亮 → pick；
  * - ResearchBoard 的元素点击（track/action/techTile/advTechTile）同样路由进 pick；
  * - FleetPanel 的船行动格/探索按钮 → startSelection 后预填 ship/action 字段，
  *   剩余字段（hex/track 等）照常由棋盘高亮/选项框追问；
- * - 候选收窄到唯一 → 确认条 → store.submitAction(原对象)。
+ * - 候选收窄到唯一 → 直接 store.submitAction（原对象）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -54,7 +53,7 @@ const CONNECTION_LABEL: Record<string, string> = {
 };
 import { applyDragDrop, planDrag, snapHex } from './drag';
 import type { DragBuilding, DragPlan } from './drag';
-import { canExploreShip, currentQuestion, hexTargets, isReady, pick, readyAction, startSelection } from './interactions';
+import { canExploreShip, currentQuestion, exploreCandidates, hexTargets, isReady, pick, readyAction, startSelection } from './interactions';
 import type { CategoryId, Selection } from './interactions';
 import { useGameStore } from './store';
 import type { GameStore } from './store';
@@ -85,9 +84,6 @@ function finalTileVp(state: FilteredState, tileId: FinalTileId): number[] {
   }
   return vp;
 }
-
-/** 轻量选择类行动：选完即直接提交，连确认条也跳过（放建筑/选助推器；撤销条兜底）。 */
-const DIRECT_SUBMIT_TYPES: ReadonlySet<Action['type']> = new Set(['place-initial-mine', 'build-mine', 'choose-booster']);
 
 /** 组建联邦两步交互的阶段：点卫星格 → 星球组合（同卫星集多解时）→ 选联邦片。 */
 type FedStage =
@@ -234,8 +230,20 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     const cur = actorOf(state as GameState);
     const prev = prevFrameRef.current;
     if (prev !== null && prev.actor === seat && s.seq > prev.seq) {
-      setTurnCheckpoint({ seq: prev.seq, state: prev.state });
-      setUndoDismissedAt(null);
+      // confirm-turn/free-conversion/burn 是回合内记账/免费行动——不重新武装撤销条；
+      // 检查点也只在已存在时不重置（保持整回合累计增量），尚无检查点（回合首个
+      // 行动即使是免费行动）照常建立，否则增量无从计算。
+      const latest = s.log[s.log.length - 1];
+      const t = latest?.action.type;
+      const isBookkeeping =
+        latest?.player === seat &&
+        (t === 'confirm-turn' || t === 'free-conversion' || t === 'burn');
+      if (!isBookkeeping || turnCheckpoint === null) {
+        setTurnCheckpoint({ seq: prev.seq, state: prev.state });
+      }
+      if (!isBookkeeping) {
+        setUndoDismissedAt(null);
+      }
     }
     prevFrameRef.current = { seq: s.seq, state, actor: cur };
   }, [s.seq, seat, state]);
@@ -293,13 +301,13 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
   //   · 轮初自动流程的决策响应（terrans-gaia-done / itars-gaia-tech /
   //     choose-tinkering / income-order / terrans-gaia-* 盖亚兑换——收入/盖亚
   //     阶段的应答，不是我的主回合行动）；
-  //   **seq 口径**：服务器 action_applied.seq = 行动落库序号（= 行动前快照 seq），
-  //   snapshot.seq = 行动后计数；检查点快照 seq=S 时我的首个行动日志 seq=S，
-  //   故过滤边界为 >=（> 会把该行动漏掉——曾致撤销条整轮不显示）；
+  //   **seq 口径（重放/日志边界依赖，勿改）**：服务器 action_applied.seq =
+  //   行动落库序号（= 行动前快照 seq），snapshot.seq = 行动后计数；检查点
+  //   快照 seq=S 时我的首个行动日志 seq=S，故过滤边界必须为 >=（> 会漏掉它）；
   // - 之后没有其他**真人**座位的回合内行动（有则 server 必拒，显示即误导；
   //   AI 行动不挡——可一并回退）；
   // - **已进入新一轮（round 前进）则不显示**：上轮 pass 后收入自动结算（无日志），
-  //   撤销条曾在新一轮收入阶段仍挂着（用户反馈"收入阶段不需要完成/撤销"）；
+  //   新一轮收入阶段不需要完成/撤销；
   // - 收起后仅当我又产生新的回合内行动才再弹出。
   const meNow = state.players[seat];
   const meThen = turnCheckpoint?.state.players[seat];
@@ -314,8 +322,10 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     (a.type === 'free-conversion' && a.conversion.startsWith('terrans-gaia-'));
   const isPassiveResp = (a: Action): boolean => a.type === 'charge' || a.type === 'decline-charge';
   // 我最后一个回合内行动（撤销条触发点；服务器 undo 资格镜像 session.ts undo：
-  // 主行动/免费/setup 行动——被动充能响应、pass、轮初响应不算）。
-  // **不再依赖内存检查点**——刷新/重连丢检查点后撤销条依然可用（曾致 ly 建造后无撤销按钮）。
+  // 主行动 + 免费行动（烧脑/兑换）+ setup——被动充能响应、pass、轮初响应、confirm-turn 不算。
+  // 免费行动后未做主要行动也要出条：[撤销] 可回退免费行动，
+  // [完成] 在 confirm-turn 不可用（未做主要行动）时灰着。
+  // **不依赖内存检查点**——刷新/重连丢检查点后撤销条依然可用。
   const lastMyActionSeq = s.log.reduce<number | null>(
     (acc, e) =>
       e.player === seat && !isPassiveResp(e.action) && e.action.type !== 'pass' && e.action.type !== 'confirm-turn' && !isRoundStartResponse(e.action)
@@ -330,12 +340,22 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     s.log.some(
       (e) => e.seq > lastMyActionSeq && e.player !== seat && !aiSeats.has(e.player) && !isPassiveResp(e.action),
     );
-  const undoBarVisible =
+  // 已完成过（最后主行动之后已有我的 confirm-turn）→ 回合已结束，一律不显示
+  // （dismissedAt 只在内存；靠日志判定已完成，刷新后撤销条不复活）。
+  const confirmedAfter =
     lastMyActionSeq !== null &&
-    !blockedByHuman &&
-    // 有检查点时仍要求未进新一轮；无检查点（刷新后）由服务器裁决即可
-    (turnCheckpoint === null || state.round === turnCheckpoint.state.round) &&
-    (undoDismissedAt === null || lastMyActionSeq > undoDismissedAt);
+    s.log.some((e) => e.player === seat && e.action.type === 'confirm-turn' && e.seq >= lastMyActionSeq);
+  const undoBarVisible =
+    (lastMyActionSeq !== null &&
+      !blockedByHuman &&
+      !confirmedAfter &&
+      // 有检查点时仍要求未进新一轮；无检查点（刷新后）由服务器裁决即可
+      (turnCheckpoint === null || state.round === turnCheckpoint.state.round) &&
+      (undoDismissedAt === null || lastMyActionSeq > undoDismissedAt)) ||
+    // 回合完成闸在我手上时强制显示（防呆：对手 pending 窗口期点[完成]时
+    // confirm-turn 不可用、提交被跳过但 dismissedAt 已记下——若无此强制，
+    // 唯一完成入口会被永久藏掉）。已收起（确认已提交）则不强制。
+    (undoDismissedAt === null && s.legalActions.some((a) => a.type === 'confirm-turn'));
   const undoDelta: [string, number][] =
     undoBarVisible && meNow !== undefined && meThen !== undefined ? describeDelta(meThen, meNow) : [];
 
@@ -358,14 +378,14 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
       : null;
 
   /**
-   * 轻量选择类（放起始矿/建矿/选助推器）：选完即直接提交，连确认条也跳过
-   * （建筑立即真实上板便于分析局势；后悔用撤销条回退）。
+   * 选择完整即直接提交（全部行动类型，无确认条——选择末步选完即走，
+   * 后悔一律走撤销条整回合回退）。
    * 返回 true = 已直提（选择流结束，调用方不要再 setSelection）。
    */
   const tryDirectSubmit = (sel: Selection): boolean => {
     if (!isReady(sel)) return false;
     const action = readyAction(sel);
-    if (action === null || !DIRECT_SUBMIT_TYPES.has(action.type)) return false;
+    if (action === null) return false;
     store.submitAction(action);
     setSelection(null);
     return true;
@@ -377,6 +397,25 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     if (tryDirectSubmit(next)) return;
     setSelection(next);
   };
+
+  // 我的 pending 决策自动开选择流：gain-tech-tile/free-mine/tinkering/itars-gaia。
+  // 每种 pending 决策都必须有交互入口——只给提示文字玩家无法应答；
+  // 新增 pending 类型时须同步接入这里。
+  // 选择流激活后研究板科技片直接可点（question 驱动 activeField/activeOptions）。
+  useEffect(() => {
+    const p = state?.pending;
+    if (p == null || p.kind === 'charge' || selection !== null || fedStage !== null || actor !== seat) return;
+    const category =
+      p.kind === 'gain-tech-tile' ? 'gain-tech'
+      : p.kind === 'free-mine' ? 'free-mine'
+      : p.kind === 'tinkering' ? 'tinkering'
+      : p.kind === 'itars-gaia' ? 'itars-tech'
+      : null;
+    if (category === null || p.player !== seat) return;
+    const sel = startSelection(s.legalActions, category);
+    if (sel !== null && !tryDirectSubmit(sel)) setSelection(sel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.pending, selection, fedStage, actor, seat]);
 
   const onHexClick = (hex: HexKey): void => {
     // 联邦卫星选择态：点击高亮格放置/撤下卫星
@@ -400,7 +439,8 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
       if (building?.player === seat && s.legalActions.some((a) => a.type === 'upgrade' && a.hex === hex)) {
         const sel0 = startSelection(s.legalActions, 'upgrade');
         if (sel0 !== null) {
-          setSelection(pick(sel0, 'hex', hex));
+          const next = pick(sel0, 'hex', hex);
+          if (!tryDirectSubmit(next)) setSelection(next);
           return;
         }
       }
@@ -435,7 +475,8 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     }
     const sel = startSelection(s.legalActions, 'special');
     if (sel !== null) {
-      setSelection(pick(sel, 'action', specialId));
+      const next = pick(sel, 'action', specialId);
+      if (!tryDirectSubmit(next)) setSelection(next);
     }
   };
 
@@ -446,18 +487,19 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
       return;
     }
     const sel = startSelection(s.legalActions, category);
-    // 无字段问题的单候选类别（理论兜底）直接进确认条——isReady 时 ActionBar 自处理
+    // 无字段问题/末步已齐的类别直接提交（确认条已废）
+    if (sel !== null && tryDirectSubmit(sel)) return;
     setSelection(sel);
   };
 
-  /** 舰队面板：预填 ship + action 后进入选择流（剩余字段照常追问）。 */
+  /** 舰队面板：预填 ship + action 后进入选择流（剩余字段照常追问；无剩余字段直接提交）。 */
   const onShipAction = (ship: ShipId, action: ShipActionId): void => {
     if (!s.legalActions.some((a) => a.type === 'ship-action' && a.ship === ship && a.action === action)) return;
     let sel = startSelection(s.legalActions, 'ship-action');
     if (sel === null) return;
     sel = pick(sel, 'ship', ship);
     sel = pick(sel, 'action', action);
-    setSelection(sel);
+    if (!tryDirectSubmit(sel)) setSelection(sel);
   };
 
   /** 舰队面板：预填 explore 的 ship（普通或射程加成候选均可；通常直接进确认条）。 */
@@ -466,7 +508,37 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
     let sel = startSelection(s.legalActions, 'explore');
     if (sel === null) return;
     sel = pick(sel, 'ship', ship);
-    setSelection(sel);
+    if (!tryDirectSubmit(sel)) setSelection(sel);
+  };
+
+  /** 地图飞船直点 = 按「探索飞船」并选定该船：候选存在即直接提交，
+   *  普通候选优先于射程加成特殊行动（exploreCandidates 已按此序并去重）。
+   *  选择进行中且当前问题是 ship 字段（如格伦 +2 选目标船）→ 视为点选该船。 */
+  const onMapShipClick = (ship: ShipId): void => {
+    if (fedStage !== null || drag !== null || actor !== seat) return;
+    if (selection !== null) {
+      if (question === null) return;
+      if (question.field.key === 'ship' && question.options.some((o) => o.value === ship)) {
+        applyPick('ship', ship);
+        return;
+      }
+      // 当前是 hex 问题但该船可走"射程加成探索"路径（gleens +2/booster5/ship-range3：
+      // ship 路径候选的 hex 值为 null）→ 自动 hex=null → ship 一次点完
+      if (question.field.kind === 'hex' && question.options.some((o) => o.value === null)) {
+        const afterNull = pick(selection, question.field.key, null);
+        const q2 = currentQuestion(afterNull);
+        if (q2 !== null && q2.field.key === 'ship' && q2.options.some((o) => o.value === ship)) {
+          const next = pick(afterNull, 'ship', ship);
+          if (!tryDirectSubmit(next)) setSelection(next);
+        }
+      }
+      return;
+    }
+    const action = exploreCandidates(s.legalActions).find((a) =>
+      a.type === 'explore-ship' ? a.ship === ship : a.type === 'special-action' && a.payload?.ship === ship,
+    );
+    if (action === undefined) return;
+    store.submitAction(action);
   };
 
   const onSubmit = (action: Action): void => {
@@ -564,7 +636,7 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
       ) : null}
 
       <div className="game-main" data-players={state.players.length}>
-        {/* 左栏（v7）：上 = 我的版图 + 科技/推进横条；下 = 对手版图 TAB 切换 */}
+        {/* 左栏：上 = 我的版图 + 科技/推进横条；下 = 对手版图 TAB 切换 */}
         <LeftRail
           state={state}
           seat={seat}
@@ -597,11 +669,17 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
                   type="button"
                   className="btn-ghost undo-dismiss"
                   data-testid="undo-dismiss"
+                  disabled={!s.legalActions.some((a) => a.type === 'confirm-turn')}
                   onClick={() => {
-                    // 完成 = 提交 confirm-turn 放行（turnHold 期间对方按钮不亮）；同时本地收起
+                    // 完成 = 提交 confirm-turn 放行（turnHold 期间对方按钮不亮）；
+                    // 提交成功才本地收起——对手 pending 窗口期 confirm-turn 不可用，
+                    // 此时若先记 dismissedAt，完成入口会被永久藏掉（与上方的
+                    // 强制显示是同一防呆的两端）
                     const confirm = s.legalActions.find((a) => a.type === 'confirm-turn');
-                    if (confirm !== undefined) store.submitAction(confirm);
-                    setUndoDismissedAt(lastMyActionSeq ?? s.seq);
+                    if (confirm !== undefined) {
+                      store.submitAction(confirm);
+                      setUndoDismissedAt(lastMyActionSeq ?? s.seq);
+                    }
                   }}
                 >
                   完成
@@ -615,6 +693,7 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
               dimHighlights={dimHighlights}
               flashHexes={flash?.hexes}
               onHexClick={onHexClick}
+              onShipClick={onMapShipClick}
               directClickAll={actor === seat && selection === null && fedStage === null && drag === null}
               selectedHexes={fedStage?.stage === 'satellites' ? new Set(fedStage.selected) : undefined}
               snapPreview={
@@ -734,9 +813,8 @@ export function GameScreen({ store }: { store: GameStore }): ReactElement {
               )}
             </div>
 
-            {/* 事件日志：地图左下角可折叠浮层 */}
             {/* 事件日志：地图左下角可折叠浮层。按钮固定底部不动，日志内容在按钮
-                **上方**展开（曾按钮在顶、展开后被顶上去，关闭要追着按钮移动鼠标） */}
+                **上方**展开（展开/收起都不移动按钮位置） */}
             <section className={`log-panel${logOpen ? ' open' : ''}`}>
               {logOpen ? (
                 <ul className="log-list" data-testid="log-list">

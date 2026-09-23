@@ -1,12 +1,12 @@
 /**
- * 对局状态 store（M2c）：ws 薄封装 GameClient + 手写 store（useSyncExternalStore，
+ * 对局状态 store：ws 薄封装 GameClient + 手写 store（useSyncExternalStore，
  * 不引 redux/zustand）。架构照 Brass web 按盖亚协议适配：
  * - 盖亚无隐藏信息：snapshot 直接是全量 FilteredState；无选牌/暂存/回合扣留机制；
- * - 断线语义（对齐 server）：同 token resume 会踢掉旧连接——被动 close 一律视为
- *   可恢复断线：延时重连，持 token 时连上自动发 resume；
+ * - 断线语义（对齐 server）：同座位多连接共存（resume 不踢旧连接）；被动 close
+ *   一律视为可恢复断线：延时重连，持 token 时连上自动发 resume；
  * - token 持久化 localStorage（`gaia:token:<code>`），刷新后 restoreSession() 读回，
- *   connect 即自动 resume；双标签页用 owner 标记（`gaia:owner:<code>`）判定接管，
- *   避免两标签互踢；resume 被拒（invalid-token / session-lost）→ 清 session 回大厅。
+ *   connect 即自动 resume；resume 被拒：invalid-token → 清 session 回大厅；
+ *   session-lost（服务器侧恢复失败）→ 保留 token 仅报错，可重试。
  *
  * 日志：action_applied 流全量保留（事件日志完整历史；快照带全量 log 时直接采用，
  * 重连/undo 后与服务器一致；服务器 session 内存日志与 actions 表同步）；
@@ -627,8 +627,10 @@ export class GameStore {
       case 'error':
         // 导入校验失败（bad-message/import-invalid 等）：清挂起，停留大厅展示错误
         this.pendingImport = null;
-        // resume 被拒（token 失效/对局丢失）：清 session 回大厅态，避免每次重连空转 resume
-        if (msg.code === 'invalid-token' || msg.code === 'session-lost') {
+        // resume 被拒：invalid-token（token 本身失效）清 session 回大厅，避免空转 resume；
+        // session-lost（服务器侧恢复失败，可恢复）**保留 token** 仅报错——此时清 token
+        // 会把玩家在服务器临时故障期间永久踢出对局。
+        if (msg.code === 'invalid-token') {
           this.clearSession();
         }
         this.patch({ lastError: { code: msg.code, message: msg.message } });

@@ -12,9 +12,10 @@ import type { FormEvent, ReactElement } from 'react';
 import { FACTIONS } from '@gaia/engine';
 import type { FactionId, PlayerIndex } from '@gaia/engine';
 import type { DraftState, RoomState } from '@gaia/protocol';
-import { factionBoardImage, factionImage, factionPanelImage, finalScoringImage, roundScoringImage } from '../assets';
-import { factionName, finalScoringName, roundScoringName } from '../game/display';
+import { factionBoardImage, factionImage, factionPanelImage } from '../assets';
+import { factionName } from '../game/display';
 import { BoardSvg } from '../board/BoardSvg';
+import { ScoreboardBoard } from '../game/ScoreboardBoard';
 import type { GameStore } from '../game/store';
 import { useGameStore } from '../game/store';
 
@@ -163,26 +164,12 @@ export function DraftView({ store, room, draft }: { store: GameStore; room: Room
             ))}
           </div>
           <div className="draft-info-row" data-testid="draft-scoring">
-            <span className="draft-info-label">回合计分</span>
-            {draft.preview.board.roundScoring.map((t, i) => (
-              <img
-                key={t}
-                className="draft-scoring-img"
-                src={roundScoringImage(t)}
-                alt={`第 ${i + 1} 轮：${roundScoringName(t)}`}
-                title={`第 ${i + 1} 轮：${roundScoringName(t)}`}
-              />
-            ))}
-            <span className="draft-info-label">终局条件</span>
-            {draft.preview.board.finalScoring.map((f) => (
-              <img
-                key={f}
-                className="draft-scoring-img"
-                src={finalScoringImage(f)}
-                alt={finalScoringName(f)}
-                title={finalScoringName(f)}
-              />
-            ))}
+            {/* 整块实图计分板（与对局右栏同款）：回合计分片入槽 + 终局片 + 星球转化关系 */}
+            <ScoreboardBoard
+              state={draft.preview}
+              nicknames={room.seats.map((info) => info?.nickname)}
+              seat={mySeat ?? 0}
+            />
           </div>
           <div className="draft-info-map" data-testid="draft-map">
             <BoardSvg state={draft.preview} />

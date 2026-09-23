@@ -46,21 +46,19 @@ export const TRACK_COLUMN_X: Record<ResearchTrack, number> = {
 export const TRACK_LEVEL_Y: readonly number[] = [0.543, 0.462, 0.391, 0.281, 0.213, 0.043];
 
 /** 轨道内标准科技板槽中心 y（x 取所在轨列中心 + 印刷槽位右偏量）。
- *  注意（v9 修正，与实体板一致）：标准板槽在中部面板行，顶部行是高级板槽；
- *  印刷橙色槽位在面板内右偏 ≈+0.036x、y≈0.631（按 ResearchBoard.jpg 逐列实测）。 */
+ *  标准板槽在中部面板行，顶部行是高级板槽（与实体板一致）。 */
 export const TRACK_TECH_Y = 0.66;
 
 /** 标准板槽 x 右偏量（印刷槽位中心 vs 轨列中心）。
- *  v10 修正：槽位锚点回到列面板中心——用户实测科技片在列面板内明显偏右上
- *  （v9 的 +0.036 对准的是列内右下橙色电路装饰而非面板槽位中心，锚点错误）。 */
+ *  锚点 = 列面板中心；列内右下橙色电路装饰不是槽位中心，勿对准它。 */
 export const TECH_SLOT_DX = 0.004;
 
 /** 高级科技板槽中心 y（x 取所在轨列中心；槽 i 对齐 TRACK_ORDER[i]）。
  *  实体板上高级科技片放在科技轨最上方（每轨顶一格），不是中部。 */
 export const ADV_TECH_Y = 0.127;
 
-/** 标准板槽（轨道位）逐列中心（2026-09-21 按 ResearchBoard.jpg 逐面板实测浅灰槽区中心：
- *  列间距 ≈0.164（曾按 1/6≈0.167 致第 1 列命中后逐列递增右偏）；y = 面板行中心 0.657。 */
+/** 标准板槽（轨道位）逐列中心（按 ResearchBoard.jpg 逐面板标定浅灰槽区中心：
+ *  列间距 ≈0.164——非等分 1/6≈0.167，等分会让命中逐列递增右偏；y = 面板行中心 0.657。 */
 export const TECH_TRACK_SLOTS: Record<ResearchTrack, RelPoint> = {
   terra: { x: 0.084, y: 0.657 },
   nav: { x: 0.248, y: 0.657 },
@@ -70,7 +68,7 @@ export const TECH_TRACK_SLOTS: Record<ResearchTrack, RelPoint> = {
   sci: { x: 0.9, y: 0.657 },
 };
 
-/** 自由标准科技板槽（free1..3）中心（同批实测：放片空白区中心；y 曾 0.817 偏下，上调至 0.79）。 */
+/** 自由标准科技板槽（free1..3）中心（同批图标定：放片空白区中心）。 */
 export const FREE_TECH_SLOTS: readonly RelPoint[] = [
   { x: 0.163, y: 0.79 },
   { x: 0.481, y: 0.79 },
@@ -78,7 +76,7 @@ export const FREE_TECH_SLOTS: readonly RelPoint[] = [
 ];
 
 /** power 行动格中心（power1..7，左→右 = 费用 7/5/4/4/4/3/3）。
-    y 2026-09-21 PIL 紫色八边形重测（0.957→0.9516，x 微调 power2/4）。 */
+    按印刷紫色八边形标定（PIL 颜色分割）。 */
 export const POWER_ACTION_SLOTS: readonly RelPoint[] = [
   { x: 0.063, y: 0.9516 },
   { x: 0.15, y: 0.9516 },
@@ -129,8 +127,8 @@ export function techTileSlot(pos: TechTilePosition): RelPoint {
   }
 }
 
-/** LF 经济轨 L3/L4 覆盖板位置（盖住 eco 轨 L3/L4 收入图标区）。 */
-export const ECONOMY_OVERLAY_POS: RelPoint = { x: 0.795, y: 0.247 };
+/** LF 经济轨 L3/L4 覆盖板位置（盖住 eco 轨 L3/L4 收入图标区，右缘不越出经济列）。 */
+export const ECONOMY_OVERLAY_POS: RelPoint = { x: 0.778, y: 0.247 };
 
 /** 等级格容器宽度（相对图宽；高度由宽高比推出，token 以其为参照）。 */
 export const LEVEL_BOX_WIDTH = 0.092;
@@ -148,10 +146,10 @@ export const TECH_TILE_ASPECT = 178 / 134;
 export const TECH_STACK_OFFSET_PCT = 5;
 /** 高级板图宽度（相对图宽）。 */
 export const ADV_TILE_WIDTH = 0.12;
-/** 行动格热区直径（相对图宽；印刷八边形外径 ≈150px，2026-09-21 实测 0.082）。 */
+/** 行动格热区直径（相对图宽；印刷八边形外径 ≈150px = 0.082 图宽）。 */
 export const ACTION_ZONE_SIZE = 0.082;
 /** 已用 action token 直径（相对图宽；trim 素材内容≈93% 图宽，0.084 刚好盖住印刷格
-    ——曾 0.034 不足一半，灰化后用户完全看不出已盖）。 */
+    ——盖片须基本覆盖印刷八边形才可辨识）。 */
 export const ACTION_TOKEN_SIZE = 0.084;
 /** Terraforming L5 联邦标记宽度（相对图宽）。 */
 export const L5_FED_WIDTH = 0.045;

@@ -1,5 +1,5 @@
 /**
- * 中文文案与配色映射（M2c）：行动/板块/种族/星球/飞船一句话描述。
+ * 中文文案与配色映射：行动/板块/种族/星球/飞船一句话描述。
  * 引擎数据表已有部分中文名（科技板/计分板/助推器/研究轨/星球），直接复用；
  * 联邦标记/行动格/飞船行动等由数据表字段组合生成。
  */
@@ -361,8 +361,11 @@ export function describeAction(action: Action): string {
       const s = `特殊行动：${specialActionLabel(action.action)}`;
       return targetShip !== undefined ? `${s} → 探索「${shipName(targetShip)}」` : s;
     }
-    case 'ship-action':
-      return `飞船行动（${shipName(action.ship)}）：${shipActionLabel(action.action)}`;
+    case 'ship-action': {
+      const s = `飞船行动（${shipName(action.ship)}）：${shipActionLabel(action.action)}`;
+      const lp = action.payload?.lostPlanetHex;
+      return lp !== undefined ? `${s}，放置失落星球 @${lp}` : s;
+    }
     case 'explore-ship':
       return `探索飞船 ${shipName(action.ship)}`;
     case 'inspect-artifact':
@@ -420,6 +423,9 @@ export function describeDelta(before: PlayerState, after: PlayerState): [string,
   d('钱', after.resources.credits, before.resources.credits);
   d('知', after.resources.knowledge, before.resources.knowledge);
   d('Q', after.resources.qic, before.resources.qic);
+  d('魔I', after.power.bowl1, before.power.bowl1);
+  d('魔II', after.power.bowl2, before.power.bowl2);
+  d('魔III', after.power.bowl3, before.power.bowl3);
   d('VP', after.vp, before.vp);
   return out;
 }

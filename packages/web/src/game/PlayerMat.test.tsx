@@ -4,7 +4,7 @@
  * - 收入轨剩余建筑叠加数 = buildings supply（放走即从面板消失）；
  * - power 三区+gaia 区显示 token 点阵与计数（data-count）；
  * - taklons 脑石按所在区叠加；gaiaformer 可用数占槽；
- * - moweyds 也有高清图（BGG 9503664 开箱照下半块，2026-09 补），同走整图布局；
+ * - moweyds 也有高清图（BGG 9503664 开箱照下半块），同走整图布局；
  * - 卫星/空间站 misc 行已删除（卫星数见终局计分区）；
  * - 联邦标记单行自适应（不 wrap，max-width = (100% − 间隙) ÷ 枚数）。
  */
@@ -91,7 +91,7 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
   it('moweyds 高清图整图布局（BGG 9503664 板，无 legacy 回退）', () => {
     const state = fixture(['moweyds', 'terrans'], true);
     const { getByTestId } = render(<PlayerMat state={state} playerIdx={0} />);
-    // 真板已补（曾误用 wellplayed space-giants 板）：走与其他族一致的整图布局
+    // BGG 9503664 真板（注意勿与 space-giants 板混淆）：走与其他族一致的整图布局
     expect(getByTestId('player-mat-0').className).not.toContain('legacy');
     const img = document.querySelector<HTMLImageElement>('img.mat-board-img');
     expect(img?.src).toContain('/assets/factions/hi/moweyds_board_bgg9503664.png');
@@ -218,11 +218,30 @@ describe('<PlayerMat> 族板整图渲染契约', () => {
     const kinds = Array.from(strip.querySelector('.strip-tech')!.children).map(
       (el) => el.getAttribute('data-testid') ?? el.className,
     );
-    // 首项为 tech1（tile-wrap 包裹 tile-img；特殊行动已用时同容器附盖片）
-    expect(kinds[0]).toContain('tile-wrap');
-    expect(strip.querySelector('.strip-tech')!.children[0]!.querySelector('img.tile-img')).not.toBeNull();
+    // 覆盖关系：tech1 被 advtech4 覆盖 → 原位置直接显示高级板（tech-stack），
+    // 基础板不再单独出现，且 advtech4 只渲染一次（去重自己的获得条目）
+    expect(kinds[0]).toContain('tech-stack');
+    expect(kinds.filter((k) => k.includes('tech-stack'))).toHaveLength(1);
+    expect(kinds.filter((k) => k.includes('tile-wrap'))).toHaveLength(0);
     expect(strip.querySelectorAll('img[data-testid^="strip-fed-0-"]')).toHaveLength(3);
     // 翻转标记保留灰面样式
     expect(container.querySelector('.tile-img.fed.flipped')).not.toBeNull();
+  });
+
+  it('同 id 两枚联邦片按获得顺序匹配翻面状态（首枚已翻、次枚未翻 → 一灰一亮）', () => {
+    const state = fixture(['terrans', 'xenos']);
+    state.players[0]!.federationTokens = [
+      { id: 'fed6', flipped: true },
+      { id: 'fed6', flipped: false },
+    ];
+    state.players[0]!.acquisitions = [
+      { kind: 'fed', id: 'fed6' },
+      { kind: 'fed', id: 'fed6' },
+    ];
+    const { container } = render(<TechBoosterStrip state={state} playerIdx={0} />);
+    const feds = container.querySelectorAll<HTMLImageElement>('img.tile-img.fed');
+    expect(feds).toHaveLength(2);
+    expect(feds[0]!.className).toContain('flipped');
+    expect(feds[1]!.className).not.toContain('flipped');
   });
 });

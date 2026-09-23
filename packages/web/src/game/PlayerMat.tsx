@@ -7,7 +7,7 @@
  * 图下：资源（markers 图标条，不遮挡图）/科技板与联邦标记小图
  * （单行自适应）/穿梭机与神器（LF 图外徽标区）。卫星数见终局计分区，
  * 助推器见中央底部助推器池，不再占面板行。
- * 研究等级 mini 条仅详情弹窗（detailed）渲染（v6 左栏紧凑面板移除，爬轨看右栏研究板）。
+ * 研究等级 mini 条仅详情弹窗（detailed）渲染（紧凑面板不渲染，爬轨看右栏研究板）。
  *
  * moweyds 无高清图（或整图加载失败）→ 回退旧布局（legacy：头图+文字行）。
  * 当前行动者高亮边框（active）；点击"详情"弹大图模态（detailed 变体）。
@@ -259,7 +259,7 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
       ) : null}
 
       {/* 全部行动浮层（portal 到 body：锚定在最近行动行下方的独立下拉框，
-          暂时盖住版图但不动任何布局；曾用文档流弹窗把面板顶上去） */}
+          暂时盖住版图但不占文档流、不顶动任何布局） */}
       {logOpen && lastActionRowRef.current !== null && matRootRef.current !== null
         ? (() => {
             const rowRect = lastActionRowRef.current.getBoundingClientRect();
@@ -273,7 +273,7 @@ export function PlayerMat({ state, playerIdx, nickname, isMe, thinking, active, 
                     top: rowRect.bottom + 4,
                     left: rowRect.left,
                     width: Math.max(rowRect.width, 320),
-                    // 高度与版图一致（用户要求滚轮浏览历史而非矮框截断）
+                    // 高度与版图一致（滚轮浏览完整历史，不做矮框截断）
                     height: Math.max(matRect.bottom - rowRect.bottom - 8, 140),
                   }}
                   data-testid={`action-log-modal-${playerIdx}`}
@@ -317,17 +317,32 @@ export function TechBoosterStrip({ state, playerIdx, flashTileIds = [], onSpecia
   if (uncoveredTech.length === 0 && p.advTechTiles.length === 0 && p.federationTokens.length === 0 && p.artifacts.length === 0) return null;
   /** 片上特殊行动本轮已用 → 盖 action token（tech9 充能 / advtech3/11/13 资源格）。 */
   const specialUsedSet = new Set<string>(p.specialUsed);
-  /** 按获得时间混排（acquisitions 为空/缺失时回退：科技→高级→联邦的分组序）。 */
+  /** 按获得时间混排（acquisitions 为空/缺失时回退：科技→高级→联邦的分组序）。
+   *  高级板覆盖基础板后：基础板原位置直接换成高级板（物理覆盖关系，
+   *  被盖住的基础板不再单独出现）。 */
   const acqs = p.acquisitions ?? [];
   const items =
     acqs.length > 0
       ? acqs
+          .map((item) => {
+            if (item.kind !== 'tech' || !covered.has(item.id as Parameters<typeof covered.has>[0])) return item;
+            const adv = p.advTechTiles.find((t) => t.covers === item.id);
+            return adv !== undefined ? { kind: 'adv' as const, id: adv.id } : item;
+          })
+          .filter((item, i, arr) => item.kind !== 'adv' || arr.findIndex((x) => x.kind === 'adv' && x.id === item.id) === i)
       : ([
           ...uncoveredTech.map((id) => ({ kind: 'tech' as const, id })),
           ...p.advTechTiles.map((t) => ({ kind: 'adv' as const, id: t.id })),
           ...p.federationTokens.map((f) => ({ kind: 'fed' as const, id: f.id })),
         ] as { kind: 'tech' | 'adv' | 'fed'; id: string }[]);
-  const fedState = (id: string) => p.federationTokens.find((f) => f.id === id);
+  /** 联邦标记按"同 id 第几枚"匹配实例（同 id 两枚的翻面状态可能不同，
+   *  不能按 id find 恒取首枚，否则未翻面的第二枚也会显示灰面）。 */
+  const fedSeen = new Map<string, number>();
+  const fedInstance = (id: string) => {
+    const n = fedSeen.get(id) ?? 0;
+    fedSeen.set(id, n + 1);
+    return p.federationTokens.filter((f) => f.id === id)[n];
+  };
   return (
     <div className="tech-booster-strip" data-testid={`tech-booster-strip-${playerIdx}`}>
       <div className="strip-tech">
@@ -395,7 +410,7 @@ export function TechBoosterStrip({ state, playerIdx, flashTileIds = [], onSpecia
               </span>
             );
           }
-          const f = fedState(item.id);
+          const f = fedInstance(item.id);
           return (
             <img
               key={`fed-${item.id}-${i}`}
@@ -407,7 +422,7 @@ export function TechBoosterStrip({ state, playerIdx, flashTileIds = [], onSpecia
             />
           );
         })}
-        {/* 圣器与科技/联邦片同条置版图下方（曾独立一行在资源条下，用户要求并入横条） */}
+        {/* 圣器与科技/联邦片并入同一横条 */}
         {p.artifacts.map((a) => (
           <img
             key={`art-${a.id}`}
@@ -615,24 +630,62 @@ function FactionBoard({
               style={{ ...at(cal.piSlot), width: `${(BUILDING_SPRITE.pi.width * 100).toFixed(2)}%` }}
               data-testid={`mat-pi-action-${playerIdx}`}
               disabled={specialAvailable !== true}
-              title={specialAvailable === true ? '星际要塞特殊行动（同特殊行动按钮）' : '星际要塞特殊行动（当前不可用）'}
-              onClick={() => onSpecialAction()}
+              title={specialAvailable === true ? '星际要塞特殊行动（点击直接发起该能力）' : '星际要塞特殊行动（当前不可用）'}
+              onClick={() =>
+                // 有专属 PI 能力的族：点击 = 按「特殊行动」并锁定该能力（目标字段照问/直提）；
+                // 无专属能力（PI 仅资源收入）的族退回通用特殊行动菜单
+                piSpecial !== undefined && onSpecialTile !== undefined ? onSpecialTile(piSpecial) : onSpecialAction()
+              }
             />
           ) : null;
         })()
       ) : null}
 
+      {/* 资源轨实体风 token：黄钱×2（先推满 15 再推第二条）、白矿×1、蓝知×1，
+          直径略小于格；同格碰撞时按序微错开 */}
+      {cal.resourceTrack !== undefined
+        ? (() => {
+            const rt = cal.resourceTrack;
+            const cellX = (i: number): number => rt.x0 + Math.min(15, Math.max(0, i)) * rt.dx;
+            const c = p.resources.credits;
+            const tokens: { key: string; kind: 'credit' | 'ore' | 'knowledge'; x: number; label: string }[] = [
+              { key: 'c1', kind: 'credit', x: cellX(Math.min(c, 15)), label: `信用 ${c}` },
+              { key: 'c2', kind: 'credit', x: cellX(Math.max(0, c - 15)), label: `信用 ${c}` },
+              { key: 'o', kind: 'ore', x: cellX(p.resources.ore), label: `矿石 ${p.resources.ore}` },
+              { key: 'k', kind: 'knowledge', x: cellX(p.resources.knowledge), label: `知识 ${p.resources.knowledge}` },
+            ];
+            const seen = new Map<number, number>();
+            return tokens.map((t) => {
+              const n = seen.get(t.x) ?? 0;
+              seen.set(t.x, n + 1);
+              const jitter = n === 0 ? 0 : n * 0.36 * rt.cellW;
+              return (
+                <span
+                  key={t.key}
+                  className={`mat-res-token ${t.kind}`}
+                  style={{ ...at({ x: t.x + jitter, y: rt.y }), width: `${(rt.cellW * 100).toFixed(2)}%` }}
+                  title={t.label}
+                  data-testid={`mat-res-${t.key}-${playerIdx}`}
+                />
+              );
+            });
+          })()
+        : null}
+
       {/* tinkeroids/moweyds 3 步改造星球标注（setup 抽取的 3 种 3 铲星球，
-          放入大轮盘下三小格——物理版用星球标记占格，数字版用色块） */}
+          放入大轮盘下三小格——物理版用星球标记占格，数字版用色块。
+          易混色往两侧推：钛灰压深、冰白提亮（青底版上中灰钛星与白冰星要靠明度区分）
+          + 统一深色描边） */}
       {cal.threeStepSlots !== undefined && p.terraformThreeStep.length > 0
         ? cal.threeStepSlots.map((slot, i) => {
             const planet = p.terraformThreeStep[i];
             if (planet === undefined) return null;
+            const chip = planet === 'titanium' ? '#5f666d' : planet === 'ice' ? '#ffffff' : PLANET_COLORS[planet];
             return (
               <span
                 key={planet}
                 className="mat-three-step overlay"
-                style={{ ...at(slot), background: PLANET_COLORS[planet] }}
+                style={{ ...at(slot), background: chip, border: '1px solid rgba(10,16,22,0.55)' }}
                 title={`3 步改造星球：${planetName(planet)}`}
                 data-testid={`mat-three-step-${playerIdx}-${i}`}
               />

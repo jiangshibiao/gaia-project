@@ -1,6 +1,6 @@
 /**
- * 行动对话浮层（v6：地图顶部浮动条，不挡棋盘交互）：
- * 选择对话框（选项/列表/确认条）+ pending 决策条（charge/decline、tinkering、
+ * 行动对话浮层（地图顶部浮动条，不挡棋盘交互）：
+ * 选择对话框（选项/列表）+ pending 决策条（charge/decline、tinkering、
  * terrans/itars 盖亚决策、gain-tech-tile、free-mine）+ 等待提示。
  *（setup 阶段不设文字横幅——放置引导仅靠棋盘 hex 高亮。）
  *
@@ -9,23 +9,20 @@
  * 1. currentQuestion 为 choice 字段 → 渲染选项按钮；为 hex 字段 →
  *    提示"在棋盘点选"（GameScreen 把棋盘点击路由回 pick）；hex 问题的
  *    null 选项（如 free-mine 跳过）在此渲染为按钮；
- * 2. 候选收窄到唯一 → 确认条（describeCandidate + 确认/取消）→ 提交原对象。
+ * 2. 选择完整 → GameScreen.tryDirectSubmit 直接提交（无确认条，后悔走撤销条）。
  * 联邦类别为列表模式：完整枚举逐条列出（"N 星球+M 卫星 → 标记名"）。
  */
 import type { ReactElement } from 'react';
 import type { Action, GameState, PlayerIndex } from '@gaia/engine';
-import { applyAction } from '@gaia/engine';
 import { actorOf } from '@gaia/protocol';
 import type { FilteredState } from '@gaia/protocol';
 import { tinkeringTileImage } from '../assets';
-import { deltaText, factionName } from './display';
+import { factionName } from './display';
 import {
   categoryDef,
   currentQuestion,
   describeCandidate,
   findResponse,
-  isReady,
-  readyAction,
 } from './interactions';
 import type { Selection } from './interactions';
 
@@ -37,24 +34,6 @@ export interface ActionBarProps {
   onPick: (fieldKey: string, value: string | null) => void;
   onCancelSelection: () => void;
   onSubmit: (action: Action) => void;
-}
-
-/**
- * 行动预览增量（本地 applyAction 试算，仅显示用，不产生任何状态）：
- * 确认条上告诉玩家这一动的花销/收益（矿/钱/知/Q/VP）。
- */
-function actionDeltaPreview(state: FilteredState, seat: PlayerIndex, action: Action | null): string {
-  if (action === null) return '';
-  const before = state.players[seat];
-  if (before === undefined) return '';
-  try {
-    const after = (applyAction(state as unknown as GameState, action, { assumeLegal: true }) as GameState).players[seat];
-    if (after === undefined) return '';
-    const t = deltaText(before, after);
-    return t !== '' ? `（${t}）` : '';
-  } catch {
-    return '';
-  }
 }
 
 export function ActionBar({
@@ -70,34 +49,10 @@ export function ActionBar({
   const myTurn = actor === seat;
   const pending = state.pending;
 
-  // ---- 选择进行中：确认条 / 选项对话框 / 棋盘提示 ----
+  // ---- 选择进行中：选项对话框 / 棋盘提示（确认条已废——选择完整即由
+  // GameScreen.tryDirectSubmit 直接提交，本组件不会再见到 isReady 的选择） ----
   if (selection !== null) {
     const def = categoryDef(selection.category);
-    if (isReady(selection)) {
-      const action = readyAction(selection);
-      return (
-        <div className="action-bar" data-testid="action-bar">
-          <div className="confirm-bar" data-testid="confirm-bar">
-            <span className="confirm-text" data-testid="confirm-text">
-              {action !== null ? describeCandidate(action) : ''}
-              {actionDeltaPreview(state, seat, action)}
-            </span>
-            <button
-              type="button"
-              className="btn-primary"
-              data-testid="confirm-submit"
-              disabled={action === null}
-              onClick={() => (action !== null ? onSubmit(action) : undefined)}
-            >
-              确认
-            </button>
-            <button type="button" className="btn-ghost" data-testid="confirm-cancel" onClick={onCancelSelection}>
-              取消
-            </button>
-          </div>
-        </div>
-      );
-    }
 
     // 列表模式（联邦）：完整枚举直选
     if (def.mode === 'list') {
@@ -204,12 +159,26 @@ export function ActionBar({
     (a): a is Extract<Action, { type: 'income-order' }> => a.type === 'income-order' && a.order === 'charge-first',
   );
 
+  // 蹭能显示量 = min(邀约量, 实际可充 token 数)：计费按实际充入量−1，显示同步封顶；
+  // taklons PI 会先 +1 token 计入。引擎邀约量保持建筑 pv 原文（重放兼容），
+  // 不能直接用于显示（可充数不足时按原文会虚高）。
+  const chargeableTokens = (idx: PlayerIndex): number => {
+    const pw = state.players[idx]?.power;
+    if (pw === undefined) return 0;
+    const taklonsPi = state.players[idx]?.faction === 'taklons' && state.players[idx]?.buildings.pi === 0;
+    return pw.bowl1 + pw.bowl2 + (pw.brainstone === 'bowl1' || pw.brainstone === 'bowl2' ? 1 : 0) + (taklonsPi ? 1 : 0);
+  };
+  const chargeDisplay =
+    chargeOffer !== null
+      ? { amount: Math.min(chargeOffer.amount, chargeableTokens(chargeOffer.player)) }
+      : null;
+
   const pendingText = (() => {
     if (pending === null) return null;
     switch (pending.kind) {
       case 'charge':
-        return chargeOffer !== null
-          ? `对手在附近建矿：你可充能 ${chargeOffer.amount} 能量（代价 ${chargeOffer.vpCost} 分）`
+        return chargeDisplay !== null
+          ? `对手在附近建矿：你可充能 ${chargeDisplay.amount} 能量（代价 ${Math.max(0, chargeDisplay.amount - 1)} 分）`
           : `等待对手响应充能邀约（${pending.queue.length} 人）…`;
       case 'itars-gaia':
         return pending.player === seat ? '伊塔星人盖亚阶段：可弃 4 盖亚能量换科技板' : '等待伊塔星人盖亚阶段决策…';
@@ -232,28 +201,20 @@ export function ActionBar({
     }
   })();
 
-  // 无任何提示且非待确认时不占位（浮动条整体隐藏）
-  const confirmTurn = findResponse(legalActions, 'confirm-turn');
-  if (pendingText === null && confirmTurn === undefined && (myTurn || actor === null)) {
+  // 无任何提示时不占位（浮动条整体隐藏）。回合完成只有地图下方撤销条一个入口
+  // （turnhold 期间 confirm-turn 可用时 actor=me，同样隐藏）。
+  if (pendingText === null && (myTurn || actor === null)) {
     return <div className="action-bar idle" data-testid="action-bar" hidden />;
   }
 
   return (
     <div className="action-bar" data-testid="action-bar">
-      {confirmTurn !== undefined ? (
-        <div className="pending-banner" data-testid="turnhold-banner">
-          <span>回合待完成（仍可免费兑换/烧脑；撤销条[完成]同效）</span>
-          <button type="button" className="btn-primary" data-testid="confirm-turn" onClick={() => onSubmit(confirmTurn)}>
-            完成回合
-          </button>
-        </div>
-      ) : null}
       {pendingText !== null ? (
         <div className="pending-banner" data-testid="pending-banner">
           <span>{pendingText}</span>
-          {chargeOffer !== null && chargeAction !== undefined ? (
+          {chargeDisplay !== null && chargeAction !== undefined ? (
             <button type="button" className="btn-primary" data-testid="charge-accept" onClick={() => onSubmit(chargeAction)}>
-              充能（-{chargeOffer.vpCost} 分）
+              充能（-{Math.max(0, chargeDisplay.amount - 1)} 分）
             </button>
           ) : null}
           {chargeOffer !== null && declineAction !== undefined ? (

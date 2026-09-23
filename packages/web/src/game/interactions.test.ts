@@ -1,5 +1,5 @@
 /**
- * interactions 行动状态机单测（M2c）：
+ * interactions 行动状态机单测：
  * - 类别分组（availableCategories）；
  * - 字段逐步收窄（currentQuestion 跳过单值字段、pick 过滤、readyAction 返回原对象）；
  * - hex 目标提取（hexTargets）；
@@ -37,6 +37,49 @@ describe('availableCategories 类别分组', () => {
 
   it('空 legalActions 返回空', () => {
     expect(availableCategories([])).toEqual([]);
+  });
+});
+
+describe('类别字段清单回归（高级板三件套）', () => {
+  // ship-action 升 lab 拿板必须有 advTechTile/coverTechTile/flipToken——漏列会让
+  // 高级板候选在选择机里塌缩不可见。
+  it('ship-action / upgrade / gain-tech 均含高级板三字段', () => {
+    for (const id of ['ship-action', 'upgrade', 'gain-tech'] as const) {
+      const keys = categoryDef(id).fields.map((f) => f.key);
+      expect(keys, id).toContain('advTechTile');
+      expect(keys, id).toContain('coverTechTile');
+      expect(keys, id).toContain('flipToken');
+    }
+  });
+
+  it('ship-action 选择流：升 lab + 高级板候选可选中并提交原对象', () => {
+    const advAction = {
+      type: 'ship-action',
+      ship: 'twilight',
+      action: 'ship-upgrade-ts-lab',
+      payload: { hex: '0,1', advTechTile: 'advtech11', coverTechTile: 'tech9', flipToken: 'fedlf2', track: 'eco' },
+    } as const;
+    const stdAction = {
+      type: 'ship-action',
+      ship: 'twilight',
+      action: 'ship-upgrade-ts-lab',
+      payload: { hex: '0,1', techTile: 'tech1', track: 'eco' },
+    } as const;
+    const legal = [advAction, stdAction] as unknown as Action[];
+    let sel = startSelection(legal, 'ship-action')!;
+    for (const [k, v] of [
+      ['ship', 'twilight'],
+      ['action', 'ship-upgrade-ts-lab'],
+      ['hex', '0,1'],
+      ['advTechTile', 'advtech11'],
+      ['coverTechTile', 'tech9'],
+      ['flipToken', 'fedlf2'],
+      ['track', 'eco'],
+    ] as const) {
+      sel = pick(sel, k, v);
+    }
+    expect(isReady(sel)).toBe(true);
+    expect(readyAction(sel)).toBe(advAction);
   });
 });
 

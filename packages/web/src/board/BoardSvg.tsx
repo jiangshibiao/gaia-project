@@ -67,6 +67,40 @@ import {
 import { bestHorizontalRotation, clampZoom, formatViewBox, panViewBox, parseViewBox, rotatedPointsViewBox, zoomViewBox } from './viewport';
 import type { ViewBox } from './viewport';
 
+/**
+ * 扇区大板块边界（19 小格一块，描边按扇区而非小格）：
+ * 枚举该扇区格子的外边（邻格不属本扇区的边），精确贴合任意摆放/旋转。
+ * 返回 [x1,y1,x2,y2] 线段组（SVG 单位）；与小格单描边（.hex-edge）区分渲染。
+ */
+export function sectorOutlineSegments(
+  map: Record<HexKey, HexState>,
+  sectorId: string,
+): [number, number, number, number][] {
+  const NEIGHBORS: readonly (readonly [number, number])[] = [
+    [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1],
+  ];
+  const segs: [number, number, number, number][] = [];
+  for (const key of Object.keys(map) as HexKey[]) {
+    const hex = map[key]!;
+    if (hex.sector !== sectorId) continue;
+    const { q, r } = parseHexKey(key);
+    const { x, y } = hexToPixel(q, r);
+    for (let e = 0; e < 6; e++) {
+      const [dq, dr] = NEIGHBORS[e]!;
+      if (map[`${q + dq},${r + dr}` as HexKey]?.sector === sectorId) continue;
+      const a1 = (Math.PI / 180) * (60 * e);
+      const a2 = (Math.PI / 180) * (60 * (e + 1));
+      segs.push([
+        x + HEX_SIZE * Math.cos(a1),
+        y + HEX_SIZE * Math.sin(a1),
+        x + HEX_SIZE * Math.cos(a2),
+        y + HEX_SIZE * Math.sin(a2),
+      ]);
+    }
+  }
+  return segs;
+}
+
 /** 单 hex 外接圆半径（SVG 单位）。 */
 export const HEX_SIZE = 30;
 
@@ -181,10 +215,10 @@ function BuildingImage({ state, type, player }: { state: FilteredState; type: Bu
 
 /**
  * 星球叠加贴图的绘制半径（×HEX_SIZE）：让贴图可见圆盘与原画印刷星球等大。
- * 原画印刷星球半径经圆拟合实测 ≈ 52.5 图内 px（= 0.646·HEX_SIZE；transdim
+ * 原画印刷星球半径经圆拟合 ≈ 52.5 图内 px（= 0.646·HEX_SIZE；transdim
  * 较小 ≈ 43 px = 0.53·HEX_SIZE）；各贴图 PNG 的透明边距不同（内容填充：
- * gaia 88.7%、transdim 66.1%、asteroid/proto ≈100%），故按填充率折算绘制半径。
- * 此前统一 0.58 导致盖亚转化后的贴图比原画星球小约 20%，盖不住底下印刷星球。
+ * gaia 88.7%、transdim 66.1%、asteroid/proto ≈100%），故按填充率折算绘制半径——
+ * 统一半径会让填充率小的贴图比原画星球小一截，盖不住底下印刷星球。
  */
 const PLANET_TEXTURE_R: Partial<Record<PlanetType, number>> = {
   gaia: HEX_SIZE * 0.73,
@@ -501,6 +535,12 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
     [state.map],
   );
 
+  /** 扇区边界层数据 = 每扇区一组外边线段（sectorOutlineSegments）。 */
+  const sectorOutlines = useMemo(
+    () => placements.sectors.map((p) => ({ id: p.id, segs: sectorOutlineSegments(state.map, p.id) })),
+    [placements, state.map],
+  );
+
   /** Interspace 单格底图。 */
   const interspaceCells = useMemo(
     () => entries.filter(({ hex }) => hex.sector === 'interspace'),
@@ -587,19 +627,17 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
                     data-sector={hex.sector}
                     points={hexPoints(0, 0, HEX_SIZE - 1)}
                   />
-                ) : (
-                  // 原画覆盖格：扇区图自带的网格线在地图外缘没有闭合描边，
-                  // 补一个只描边的六边形，让边缘格也有蓝色外框。
-                  <polygon className="hex-edge" points={hexPoints(0, 0, HEX_SIZE - 1)} />
-                )}
+                ) : null}
                 {hex.planet !== 'empty' ? (
                   <g className="hex-planet" data-planet={hex.planet}>
                     <PlanetOverlay hex={hex} artPlanet={placements.artPlanet.get(key)} hasArt={hasArt} />
                   </g>
                 ) : null}
+                {/* 小格统一单描边——叠在星球图之上 */}
+                <polygon className="hex-edge" points={hexPoints(0, 0, HEX_SIZE - 1)} />
                 {hex.powerRing === true ? (
-                  // 能量环（moweyds）：贴近六边形边缘的醒目蓝环（powerring.png 实物图太暗
-                  // 看不清，用户要求纯蓝环且与六边形差不多位置）。深色底环 + 亮蓝主环。
+                  // 能量环（moweyds）：贴近六边形边缘的醒目蓝环（powerring.png 实物图
+                  // 太暗看不清，故用纯蓝环贴近六边形位置）。深色底环 + 亮蓝主环。
                   <g className="hex-power-ring" data-testid={`power-ring-${key}`}>
                     <circle r={HEX_SIZE * 0.8} fill="none" stroke="#0b1c2c" strokeWidth={HEX_SIZE * 0.15} />
                     <circle r={HEX_SIZE * 0.8} fill="none" stroke="#3fa8ff" strokeWidth={HEX_SIZE * 0.085} />
@@ -732,6 +770,16 @@ export const BoardSvg = forwardRef<BoardSvgHandle, BoardSvgProps>(function Board
               </g>
             );
           })}
+          {/* 扇区大板块边界层（19 小格一块；琥珀金线，压在小格单描边之上） */}
+          <g className="sector-outlines" pointerEvents="none">
+            {sectorOutlines.map((s) => (
+              <g key={s.id} className="sector-outline" data-sector={s.id}>
+                {s.segs.map(([x1, y1, x2, y2], i) => (
+                  <line key={i} className="sector-edge" x1={x1.toFixed(2)} y1={y1.toFixed(2)} x2={x2.toFixed(2)} y2={y2.toFixed(2)} />
+                ))}
+              </g>
+            ))}
+          </g>
           {/* 拖拽吸附预览：落点合法时半透明预显将放置的建筑 */}
           {snapPreview != null ? (() => {
             const { q, r } = parseHexKey(snapPreview.hex);

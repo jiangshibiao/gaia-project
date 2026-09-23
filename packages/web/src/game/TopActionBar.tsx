@@ -1,7 +1,7 @@
 /**
- * 顶栏（v6 布局重整）：左 = 盖亚计划标识 + 第 x/6 轮；
- * 右 = 进度信息（本轮计分/先手/当前行动者/连接态）+ 行动按钮组
- * （含免费兑换/烧脑下拉）+ 离开房间，右侧整体 flex 均匀间距分布。
+ * 顶栏（三段式）：左 = 盖亚计划标识 + 第 x/6 轮 + 导出对局；
+ * 中 = 行动按钮组（含免费兑换/烧脑下拉）；右 = 进度信息（先手/当前行动者/
+ * 连接态）+ 离开房间。
  *
  * 行动按钮：主九个（建矿/盖亚计划/升级建筑/研究/组建联邦/探索飞船/魔力行动/
  * 特殊行动/Pass）常驻，当前可用的高亮（.primary 可点），不可用置灰禁用；
@@ -156,9 +156,10 @@ export function TopActionBar({
           })}
 
           <div className="convert-group" ref={convertRef}>
+            {/* 兑换下拉不高亮（它不是提示——可用即可，无需招呼；烧脑/兑换在 dropdown 内逐条直发） */}
             <button
               type="button"
-              className={`top-act${freeConversions.length > 0 || burnAction !== undefined ? ' primary' : ''}`}
+              className="top-act"
               data-testid="convert-toggle"
               disabled={!myTurn || (freeConversions.length === 0 && burnAction === undefined)}
               onClick={() => setConvertOpen((v) => !v)}

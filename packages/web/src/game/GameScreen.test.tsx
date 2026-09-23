@@ -1,12 +1,12 @@
 /**
- * GameScreen v7 布局契约测试：
+ * GameScreen 布局契约测试：
  * - 顶栏（行动按钮组在顶栏）+ 左栏两块（我的版图+科技/推进横条 / 对手版图 TAB）
  *   + 中央星图 + 右研究/计分栏；
  * - 右栏计分区：ScoreboardBoard 实图计分板（当前轮金框高亮）+ LF 第 7 高级板槽
- *   + 绿轨终局计数点 + 计分表弹层；
- * - 中央底部：左助推器池 + 右舰队 2×2（v7 舰队右移）；
+ *   + 绿轨终局计数点 + 常驻计分表（无展开/收起交互）；
+ * - 中央底部：左助推器池 + 右舰队 2×2；
  * - 旧底部栏（「研究 · 舰队」tab / 时代标记条）整体移除；
- * - 计分表并入右栏计分区（弹层）；事件日志为地图左下角可折叠浮层；
+ * - 事件日志为地图左下角可折叠浮层；
  * - 点面板"详情"弹完整详情 modal。
  */
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -46,7 +46,7 @@ function renderInGame(store: GameStore, room?: Parameters<typeof roomFixture>[0]
   return ws;
 }
 
-describe('<GameScreen> v6 布局契约', () => {
+describe('<GameScreen> 布局契约', () => {
   it('三栏存在：左栏两块（我的版图 + 对手版图 TAB）+ 中央星图 + 右研究/计分栏', () => {
     const { store } = setupStore();
     renderInGame(store);
@@ -215,7 +215,7 @@ describe('<GameScreen> v6 布局契约', () => {
     s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
     act(() => {
       ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'place-initial-mine', hex: '0,0' }, events: [] });
-      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [{ type: 'confirm-turn' }] });
     });
     const bar = screen.getByTestId('undo-bar');
     expect(bar).toBeInTheDocument();
@@ -224,17 +224,49 @@ describe('<GameScreen> v6 布局契约', () => {
     // 撤销 → 发送 undo
     fireEvent.click(screen.getByTestId('undo-turn'));
     expect(ws.lastSent()).toEqual({ type: 'undo', protocolVersion: PROTOCOL_VERSION, token: 'tok-me' });
-    // 完成 → 收起；推 seq 3 再次提交 → 重新出现
+    // 完成 → 提交 confirm-turn 并收起（真实流程：服务器随后回播 confirm-turn 日志）
     fireEvent.click(screen.getByTestId('undo-dismiss'));
     expect(screen.queryByTestId('undo-bar')).toBeNull();
+    // 已完成过的回合（日志已有 confirm-turn）：完成后的免费行动不再弹条
+    // （真实时序：主行动 →（turnHold 内免费行动）→ confirm-turn）
     const s3 = filterStateFor(game);
     s3.players[0]!.resources.credits -= 1;
     s3.setupQueue = [1, 0, 1, 0, 1, 1, 1];
     act(() => {
       ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 2, player: 0, action: { type: 'free-conversion', conversion: 'pw1-c' }, events: [] });
-      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 3, state: s3, legalActions: [] });
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 3, player: 0, action: { type: 'confirm-turn' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 4, state: s3, legalActions: [] });
+    });
+    expect(screen.queryByTestId('undo-bar')).toBeNull();
+    // 下一个主行动重新出现
+    const s4 = filterStateFor(game);
+    s4.players[0]!.resources.ore -= 1;
+    s4.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 4, player: 0, action: { type: 'build-mine', hex: '1,0' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 5, state: s4, legalActions: [] });
     });
     expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
+  });
+
+  it('撤销条：免费行动后未做主要行动也出条（[完成] 灰着，[撤销] 可用）', () => {
+    const { store } = setupStore();
+    const ws = renderInGame(store);
+    const game = gameFixture();
+    const s2 = filterStateFor(game);
+    s2.players[0]!.power.bowl2 -= 1;
+    s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
+    act(() => {
+      ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'burn' }, events: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+    });
+    const bar = screen.getByTestId('undo-bar');
+    expect(bar).toBeInTheDocument();
+    // 未做主要行动 → confirm-turn 不可用 → [完成] 禁用；[撤销] 可用发 undo
+    expect(screen.getByTestId('undo-dismiss')).toBeDisabled();
+    expect(screen.getByTestId('undo-delta').textContent).toContain('魔II-1');
+    fireEvent.click(screen.getByTestId('undo-turn'));
+    expect(ws.lastSent()).toEqual({ type: 'undo', protocolVersion: PROTOCOL_VERSION, token: 'tok-me' });
   });
 
   it('撤销条：真人对手行动后消失（server 必拒不误导）；AI 对手行动不挡', () => {
@@ -294,7 +326,7 @@ describe('<GameScreen> v6 布局契约', () => {
     s2.setupQueue = [1, 0, 1, 0, 1, 1, 1];
     act(() => {
       ws.emit({ type: 'action_applied', protocolVersion: PROTOCOL_VERSION, seq: 1, player: 0, action: { type: 'place-initial-mine', hex: '0,0' }, events: [] });
-      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [] });
+      ws.emit({ type: 'snapshot', protocolVersion: PROTOCOL_VERSION, seq: 2, state: s2, legalActions: [{ type: 'confirm-turn' }] });
     });
     expect(screen.getByTestId('undo-bar')).toBeInTheDocument();
     // 完成收起 → 对面回合我点充能 → 条不再弹出
@@ -519,8 +551,8 @@ describe('<GameScreen> v6 布局契约', () => {
     expect(cell.className).toContain('direct');
     expect(cell).toBeEnabled();
     fireEvent.click(cell);
-    // 单候选 → 直接进确认条
-    expect(screen.getByTestId('confirm-bar')).toBeInTheDocument();
+    // 单候选无字段 → 直接提交（确认条已废）
+    expect(screen.queryByTestId('confirm-bar')).toBeNull();
     // 未在 legalActions 的格保持禁用
     expect(screen.getByTestId('board-action-power2')).toBeDisabled();
   });

@@ -111,7 +111,7 @@ export function ExplorationBoard({ state, seat, specialAvailable, onSpecialActio
   const factionColor = FACTIONS[p.faction].color;
   // 探索板特殊行动格（部分族有，印在面板中部八边形）：本轮已用 → 盖片置灰；
   // 自己回合且有合法特殊行动 → 热区可点，**直发该行动**（onSpecialTile 锁定，
-  // 不再经过「特殊行动」菜单重选——用户反馈点 +2 还要再选一次）
+  // 不再经过「特殊行动」菜单重选）
   const specialId = PANEL_SPECIAL_ACTION[p.faction];
   const specialUsed = specialId !== undefined && (p.specialUsed.includes(specialId) || p.roundAbilityUsed.includes(specialId));
   const specialHandler = onSpecialTile !== undefined ? () => onSpecialTile(specialId!) : onSpecialAction;

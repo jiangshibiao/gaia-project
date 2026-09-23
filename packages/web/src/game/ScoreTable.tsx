@@ -1,5 +1,5 @@
 /**
- * 计分表（M2c）：按回合顺位列出玩家（ faction / VP / pass 状态 / 先手标记 /
+ * 计分表：按回合顺位列出玩家（ faction / VP / pass 状态 / 先手标记 /
  * AI 思考中），供对局画面侧栏与终局结算复用。
  */
 import type { ReactElement } from 'react';
@@ -31,7 +31,9 @@ export function ScoreTable({ state, nicknames, thinkingSeats, seat }: ScoreTable
         {state.turnOrder.map((idx, order) => {
           const p = state.players[idx];
           if (p === undefined) return null;
-          const isCurrent = state.phase === 'action' && state.turnOrder[state.currentPlayerIdx] === idx;
+          // currentPlayerIdx 本身就是座位号（不是 turnOrder 下标）——turnOrder 洗牌后
+          // 两者不同序，错用会把"行动中"标到 turnOrder[currentPlayerIdx] 那个倒霉座位。
+          const isCurrent = state.phase === 'action' && state.currentPlayerIdx === idx;
           const passed = state.passedPlayers.includes(idx);
           return (
             <tr

@@ -74,6 +74,17 @@ const DEEP_CANONICAL: readonly Hex[] = [
   { q: 0, r: 1 }, // face[2]：右下
 ];
 
+/**
+ * 深空板**图像**的标准面序（face[0]左 / face[1]右上 / face[2]右下）与引擎
+ * DEEP_SPACE_TILES 数据序不一致的板面（按图逐格标定）：11b/18b 图像
+ * 小行星在右上，数据序却给在 face[0]——渲染匹配必须用图像序（内容匹配用
+ * 数据序照旧，引擎循环位移下两者游戏语义等价，仅渲染会错格）。
+ */
+const DEEP_IMAGE_FACE_ORDER: Readonly<Record<string, readonly [PlanetType, PlanetType, PlanetType]>> = {
+  '11b': ['empty', 'asteroid', 'empty'],
+  '18b': ['empty', 'asteroid', 'empty'],
+};
+
 /** 深空图像内 hex 外接圆半径（286×283 图紧密包围 3 个 flat-top hex 推得）。 */
 export const DEEP_IMAGE_HEX_SIZE = 283 / (2 * Math.sqrt(3));
 /** 锚点（face[1] hex）在图内的像素坐标。 */
@@ -193,7 +204,14 @@ function placeDeepSpaceTile(
     const abs = hexAdd(rotateRight(mirrorTransform(DEEP_CANONICAL[i]!), ORIGIN, match.rotation), match.anchor);
     artPlanet.set(hexKey(abs), face[i]!);
   }
-  return { tile: tileId, side, rotation: match.rotation, mirror: match.mirror, anchor: match.anchor };
+  // 渲染摆放：图像面序与数据序不一致的板面（DEEP_IMAGE_FACE_ORDER）改按图像序
+  // 匹配——否则图里的小行星会落到数据序对应格之外的格子（11b/18b 会错一格）。
+  const renderFace = DEEP_IMAGE_FACE_ORDER[`${tileId}${side}`] ?? face;
+  const renderMatch =
+    renderFace === face ? match : matchDeepRotation(map, keys, renderFace);
+  return renderMatch !== null
+    ? { tile: tileId, side, rotation: renderMatch.rotation, mirror: renderMatch.mirror, anchor: renderMatch.anchor }
+    : { tile: tileId, side, rotation: match.rotation, mirror: match.mirror, anchor: match.anchor };
 }
 
 /**

@@ -74,6 +74,25 @@ describe('faction-calibration 结构', () => {
     }
   });
 
+  it('资源轨：18 族均有标定；16 格圆心在界内且单调；token 直径小于格距', () => {
+    for (const f of ALL_FACTIONS) {
+      const rt = factionCalibration(f).resourceTrack;
+      expect(rt, `${f}.resourceTrack`).toBeDefined();
+      if (rt === undefined) continue;
+      const centers = Array.from({ length: 16 }, (_, i) => rt.x0 + i * rt.dx);
+      for (const [i, x] of centers.entries()) {
+        expect(x, `${f}.rt[${i}]`).toBeGreaterThan(0);
+        expect(x, `${f}.rt[${i}]`).toBeLessThan(1);
+      }
+      for (let i = 1; i < centers.length; i++) {
+        expect(centers[i]!).toBeGreaterThan(centers[i - 1]!);
+      }
+      expect(rt.cellW, `${f}.rt.cellW`).toBeLessThan(rt.dx);
+      expect(rt.y).toBeGreaterThan(0);
+      expect(rt.y).toBeLessThan(0.2);
+    }
+  });
+
   it('bescods：PI 与学院位置左右互换', () => {
     const t = factionCalibration('terrans');
     // 模板：PI 在左，学院在右

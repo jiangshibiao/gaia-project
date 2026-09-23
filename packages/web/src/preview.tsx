@@ -1,10 +1,10 @@
 /**
  * 开发预览页（仅 vite dev 使用，不进生产 bundle）：
- * 构造 LF 局 FilteredState，渲染 v6 布局各栏组件（ResearchBoard / FleetPanel /
- * RoundArc / FinalsProgress / BoostersStrip）/ BoardSvg / PlayerMat
+ * 构造 LF 局 FilteredState，渲染各栏组件（ResearchBoard / FleetPanel /
+ * ScoreboardBoard / BoostersStrip / ExplorationBoard）/ BoardSvg / PlayerMat
  * （族板整图叠加，逐族目视验证校准）。
  * 末尾挂一个带假 store 的完整 GameScreen（本地引擎驱动、其他座位自动走
- * 第一个合法行动），用于目视验证 v6 三栏布局、拖拽建矿/升级与 power 行动格直点。
+ * 第一个合法行动），用于目视验证三栏布局、拖拽建矿/升级与 power 行动格直点。
  * 访问 http://localhost:5175/preview.html
  */
 import { StrictMode } from 'react';
@@ -267,7 +267,7 @@ function App() {
           <ExplorationBoard state={gleensUnusedState} seat={0} specialAvailable onSpecialAction={() => {}} />
         </div>
       </div>
-      <h2>v6 各栏组件（研究轨道 / 舰队 2×2 / 回合弧 / 终局进度 / 助推器池）</h2>
+      <h2>各栏组件（研究轨道 / 舰队 2×2 + 助推器池 / 实图计分板）</h2>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <div style={{ width: '30vw', flex: 'none' }}>
           <ResearchBoard state={state} />

@@ -1,5 +1,5 @@
 /**
- * GameClient / GameStore 单测（M2c）：FakeWebSocket 注入替代原生 ws——
+ * GameClient / GameStore 单测：FakeWebSocket 注入替代原生 ws——
  * 连接/建房/收快照/提交行动/断线重连自动 resume/token 持久化/同座位多连接共存。
  */
 import { renderHook, act } from '@testing-library/react';
@@ -325,13 +325,13 @@ describe('GameStore 断线与重连', () => {
     expect(store.getState().connection).toBe('connected');
   });
 
-  it('持 token 重连成功后自动发 resume（容忍同 token 被踢的被动 close）', async () => {
+  it('持 token 时被动断线重连成功后自动发 resume', async () => {
     const { store } = setup();
     store.connect();
     const ws1 = lastWs();
     ws1.open();
     ws1.emit({ type: 'credentials', protocolVersion: PROTOCOL_VERSION, seat: 1, token: 'tok-kick' });
-    // 另一标签页用同 token resume → 服务器踢掉本连接（无 connected=false 广播）
+    // 被动 close（无 connected=false 广播）→ 自动重连
     ws1.serverClose();
     await tick();
     const ws2 = lastWs();
@@ -433,7 +433,8 @@ describe('GameStore token 持久化与恢复', () => {
     expect(ws.sent).toHaveLength(0);
   });
 
-  it('resume 失败（invalid-token / session-lost）→ 清 token 与持久化、回大厅态', () => {
+  it('resume 失败：invalid-token 清 token 回大厅；session-lost 保留 token 可重试', () => {
+    // invalid-token → 清 session 与持久化
     const storage = new FakeStorage();
     storage.setItem('gaia:token:WXYZ23', 'tok-dead');
     const { store } = setup(0, { storage });
@@ -444,15 +445,33 @@ describe('GameStore token 持久化与恢复', () => {
     ws.emit({
       type: 'error',
       protocolVersion: PROTOCOL_VERSION,
-      code: 'session-lost',
-      message: '对局已随服务器重启丢失',
+      code: 'invalid-token',
+      message: 'token 无效',
     });
     const s = store.getState();
     expect(s.token).toBeNull();
     expect(s.room).toBeNull();
-    expect(s.seat).toBeNull();
-    expect(s.lastError?.code).toBe('session-lost');
     expect(storage.getItem('gaia:token:WXYZ23')).toBeNull();
+  });
+
+  it('session-lost：保留 token 仅报错（服务器侧恢复失败可重试，不永久踢出）', () => {
+    const storage = new FakeStorage();
+    storage.setItem('gaia:token:WXYZ23', 'tok-alive');
+    const { store } = setup(0, { storage });
+    store.restoreSession();
+    store.connect();
+    const ws = lastWs();
+    ws.open();
+    ws.emit({
+      type: 'error',
+      protocolVersion: PROTOCOL_VERSION,
+      code: 'session-lost',
+      message: '对局已结束或无法恢复',
+    });
+    const s = store.getState();
+    expect(s.token).toBe('tok-alive');
+    expect(s.lastError?.code).toBe('session-lost');
+    expect(storage.getItem('gaia:token:WXYZ23')).toBe('tok-alive');
   });
 });
 

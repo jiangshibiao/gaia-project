@@ -1,5 +1,5 @@
 /**
- * 测试共享辅助（M2c）：FakeWebSocket / FakeStorage / store 工厂与 fixtures。
+ * 测试共享辅助：FakeWebSocket / FakeStorage / store 工厂与 fixtures。
  * 供 store.test / App.test / 组件测试复用（不参与覆盖率统计意义的生产代码）。
  */
 import { PROTOCOL_VERSION } from '@gaia/protocol';

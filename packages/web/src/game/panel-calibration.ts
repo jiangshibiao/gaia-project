@@ -6,7 +6,7 @@
  * 数值按 factions/panels/terrans.png 逐格目视核定（同 sector-calibration 的做法）。
  * 顶槽印有「3-4」标记 = 仅 3-4 人局启用；2 人局只用下方 2 槽（PANEL_SLOT_OFFSET）。
  * 特殊行动八边形（gleens +2 航距 / space-giants 2 免费步等；持续型能力的族无此格）
- * 位置同模板，2026-09-21 按 gleens.png/space-giants.png 实测。
+ * 位置同模板，按 gleens.png/space-giants.png 标定。
  */
 import type { FactionId, SpecialActionId } from '@gaia/engine';
 
@@ -23,7 +23,7 @@ export const PANEL_SLOT_OFFSET_2P = 1;
 /** 穿梭机标记宽度（相对面板图宽）。 */
 export const PANEL_SHUTTLE_W = 0.35;
 
-/** 探索板特殊行动八边形中心（gleens/space-giants 面板 2026-09-21 实测，全族同模板）。 */
+/** 探索板特殊行动八边形中心（按 gleens/space-giants 面板标定，全族同模板）。 */
 export const PANEL_SPECIAL_SLOT = { x: 0.49, y: 0.39 };
 
 /** 特殊行动八边形直径（相对面板图宽；实测 ≈0.44-0.47，盖片略小于印刷外径）。 */

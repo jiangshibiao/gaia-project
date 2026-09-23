@@ -1,5 +1,5 @@
 /**
- * 行动交互状态机（M2c）：把引擎枚举的**完全指定** legal actions 分类，
+ * 行动交互状态机：把引擎枚举的**完全指定** legal actions 分类，
  * 通过"字段逐步收窄"让用户点选出唯一行动。
  *
  * 核心不变量：所有函数返回 legalActions 数组里的**同一个 Action 对象**
@@ -127,13 +127,22 @@ const techTailFields = (
   lostPlanetGet: (a: Action) => string | null,
   shipGet: (a: Action) => string | null,
   techNullLabel?: string,
+  researchFlipGet: (a: Action) => string | null = () => null,
 ): FieldDef[] => [
+  // 高级板问题置顶：有高级板候选时先问「高级科技板 / 拿标准板 →」——高级板候选
+  // 必须一眼可见，不能藏在 techTile=null 的「放弃拿板」选项之后。
+  // 无高级板候选时 advTechTile 只有 null 单值，问题自动跳过落到标准板。
+  field('advTechTile', '高级科技板', advGet, (v) => advTechTileName(v as AdvTechTileId), { nullLabel: '拿标准板 →' }),
   field('techTile', '科技板', techTileGet, (v) => techTileName(v as TechTileId), techNullLabel !== undefined ? { nullLabel: techNullLabel } : {}),
   field('ship', '从飞船拿板', shipGet, (v) => shipName(v as ShipId), { nullLabel: '从供应拿' }),
-  field('advTechTile', '高级科技板', advGet, (v) => advTechTileName(v as AdvTechTileId), { nullLabel: '不拿高级板' }),
   field('coverTechTile', '被覆盖的板', coverGet, (v) => techTileName(v as TechTileId)),
-  field('flipToken', '翻面联邦标记', flipGet, (v) => federationTokenName(v as FederationTokenId)),
+  // 先选轨道再谈翻面：L5 推进才需要翻面——轨道问在前，选到 eco/gaia（L5）时
+  // 才出现翻面问（单标记自动跳过）；选普通片/非 L5 轨时翻面问完全不出现
+  // （先问翻面会把 eco 藏到翻面选项之后，普通片路径也多个噪音问题）
   field('research', '推进研究轨', researchGet, (v) => trackName(v as ResearchTrack), { nullLabel: '不推进' }),
+  field('flipToken', '翻面联邦标记', flipGet, (v) => federationTokenName(v as FederationTokenId)),
+  // 高级板+升 L5 的第二枚翻面（双翻面；标准板路径恒 null 自动跳过）
+  field('researchFlipToken', '升 5 级翻面', researchFlipGet, (v) => federationTokenName(v as FederationTokenId)),
   hexField('lostPlanetHex', '失落星球放置格', lostPlanetGet),
 ];
 
@@ -175,6 +184,7 @@ export const CATEGORIES: readonly CategoryDef[] = [
         upgradeGet('lostPlanetHex'),
         upgradeGet('ship'),
         '放弃拿板',
+        upgradeGet('researchFlipToken'),
       ),
     ],
   },
@@ -238,9 +248,19 @@ export const CATEGORIES: readonly CategoryDef[] = [
       field('ship', '飞船', responseGet('ship-action', 'ship'), (v) => shipName(v as ShipId)),
       field('action', '行动格', responseGet('ship-action', 'action'), (v) => shipActionLabel(v as ShipActionId)),
       hexField('hex', '目标格', payloadGet('hex')),
-      // 升级实验室先拿科技板、再确认爬轨（曾 track 在 techTile 前，用户反馈顺序别扭）
-      field('techTile', '科技板', payloadGet('techTile'), (v) => techTileName(v as TechTileId)),
+      // 升级实验室先拿科技板、再确认爬轨（拿板在前，爬轨确认在后）
+      field('techTile', '科技板', payloadGet('techTile'), (v) => techTileName(v as TechTileId), { nullLabel: '拿高级板 →' }),
+      // 高级科技板三件套（漏列会让高级板候选在选择机里塌缩不可见——引擎行动
+      // 载荷新增区分字段时，必须同步列进对应类别的 fields）
+      field('advTechTile', '高级科技板', payloadGet('advTechTile'), (v) => advTechTileName(v as AdvTechTileId), { nullLabel: '不拿高级板' }),
+      field('coverTechTile', '被覆盖的板', payloadGet('coverTechTile'), (v) => techTileName(v as TechTileId)),
+      // 先选轨道再谈翻面（L5 推进才翻面；选普通片/非 L5 轨时翻面问不出现）
       field('track', '研究轨', payloadGet('track'), (v) => trackName(v as ResearchTrack)),
+      field('flipToken', '翻面联邦标记', payloadGet('flipToken'), (v) => federationTokenName(v as FederationTokenId)),
+      // 高级板+升 L5 的第二枚翻面（双翻面；标准板路径恒 null 自动跳过）
+      field('researchFlipToken', '升 5 级翻面', payloadGet('researchFlipToken'), (v) => federationTokenName(v as FederationTokenId)),
+      // L5 失落星球放置格（漏列则候选只剩文本无差别列表，无法点选）
+      hexField('lostPlanetHex', '失落星球放置格', payloadGet('lostPlanetHex')),
       field('federationToken', '联邦标记', payloadGet('federationToken'), (v) => federationTokenName(v as FederationTokenId)),
     ],
   },
@@ -324,6 +344,7 @@ export const CATEGORIES: readonly CategoryDef[] = [
       responseGet('gain-tech-tile', 'lostPlanetHex'),
       responseGet('gain-tech-tile', 'ship'),
       '放弃',
+      responseGet('gain-tech-tile', 'researchFlipToken'),
     ),
   },
   {

@@ -353,7 +353,7 @@ select {
   justify-content: center;
 }
 
-/* ---------------- 对局画面（v6：顶栏 + 左族板栏 + 中央星图 + 右研究/计分栏） ---------------- */
+/* ---------------- 对局画面（顶栏 + 左族板栏 + 中央星图 + 右研究/计分栏） ---------------- */
 
 .game-screen {
   display: flex;
@@ -361,10 +361,10 @@ select {
   height: 100vh;
   overflow: hidden;
   /* 草图比例公式：顶栏高 4.5vh；族板宽取 15vw 与 2 块等高容纳的较小者
-     （v7 两块布局较 v6 略收窄，让星图更宽）；
+     （两块布局略收窄，让星图更宽）；
      右栏宽 = 研究板(高1.073×宽) + 实图计分板(高0.981×宽，LF 再 +0.207×宽)
      与 27vw 的较小者（15vh 为轨道下方联邦供应/计分表/内边距预留；
-     v11 起右栏整体再放大 1.25×——分母 2.05/2.26 → 1.64/1.81） */
+     右栏整体再放大 1.25×——分母 2.05/2.26 → 1.64/1.81） */
   --top-h: 4.5vh;
   --mat-w: calc(min(20vw, calc((100vh - var(--top-h) - 4vh) / 2.6 / 0.727)) * var(--ui-k) * 0.8);
   --rail-r-w: min(27vw, calc((100vh - var(--top-h) - 15vh) / 1.64));
@@ -534,7 +534,7 @@ select {
   display: flex;
 }
 
-/* 左栏（v8 两块布局）：上 = 我的版图 + 科技/推进横条；下 = 对手版图（TAB 切换）
+/* 左栏（两块布局）：上 = 我的版图 + 科技/推进横条；下 = 对手版图（TAB 切换）
    LF 时版图正右方多一块种族飞船面板（--panel-w），左栏相应加宽 */
 .rail-l {
   width: calc(var(--mat-w) + 1.2vh);
@@ -651,7 +651,7 @@ select {
   width: 34px;
 }
 
-/* 圣器与科技片同高、宽度按原图比例（344×265；曾固定 34px 宽被压窄——用户要求等比） */
+/* 圣器与科技片同高、宽度按原图比例（344×265）等比缩放 */
 .tech-booster-strip .strip-tech .tile-img.artifact {
   height: calc(var(--rb-tile-w) * 0.7528);
   width: auto;
@@ -834,7 +834,7 @@ select {
   max-height: 38vh;
 }
 
-/* 中央底部横条：左助推器池横排 + 右舰队 2×2（v7 舰队右移，约 60% 宽） */
+/* 中央底部横条：左助推器池横排 + 右舰队 2×2（约 60% 宽） */
 .center-bottom {
   flex: none;
   display: flex;
@@ -951,7 +951,7 @@ select {
   background: #101828;
 }
 
-/* 计分板（v8 实图版）：主板整图 + 叠加层；LF 下方再接梯形扩展片。
+/* 计分板（实图版）：主板整图 + 叠加层；LF 下方再接梯形扩展片。
    高度自适应：栈高 = min(栏宽推得高, flex 分得高)，富余空间留给下方常驻计分表 */
 .scoreboard-board {
   flex: 1;
@@ -1207,6 +1207,24 @@ select {
   box-shadow: 0 0 3px #000;
 }
 
+/* 资源轨实体风 token（黄钱/白矿/蓝知；略小于格，实体版图风格） */
+.mat-res-token {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid #101418d9;
+  box-shadow: 0 1px 2px #00000080, inset 0 1px 2px #ffffff40;
+}
+.mat-res-token.credit {
+  background: radial-gradient(circle at 35% 30%, #ffe066, #d9a713 70%, #8a6408);
+}
+.mat-res-token.ore {
+  background: radial-gradient(circle at 35% 30%, #ffffff, #c9d2dc 70%, #7d8894);
+}
+.mat-res-token.knowledge {
+  background: radial-gradient(circle at 35% 30%, #6db3ff, #2e6fd8 70%, #123e85);
+}
+
 .mat-power-count {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -1236,8 +1254,7 @@ select {
 }
 
 /* 收入轨建筑：transform 由 CSS 管（inline 只给 left/top/width/clip-path）。
-   静态默认上移 10%（原 hover 掀起 -20% 的一半，不再做 hover 交互），
-   让建筑下方印刷的收入标记常态可见；底行收入此前被棋子完全遮住。 */
+   静态默认上移 10%（不做 hover 交互），让建筑下方印刷的收入标记常态可见。 */
 .mat-bld.overlay {
   transform: translate(-50%, -50%) translateY(-10%);
   transition: opacity 0.12s ease-out;
@@ -1588,12 +1605,22 @@ select {
   stroke-width: 1;
 }
 
-/* 原画覆盖格的补描边（只描边不填充）：让地图外缘的六边形也有蓝色外框。 */
+/* 小格统一单描边（只描边不填充，叠在星球图之上） */
 .hex-edge {
   fill: none;
-  stroke: #6d9bd6;
-  stroke-width: 1;
-  opacity: 0.75;
+  stroke: #5b9be6;
+  stroke-width: 1.2;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* 扇区大板块边界（19 小格一块）：琥珀金线——与小格蓝线明确区分 */
+.sector-edge {
+  stroke: #e0a93e;
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.95;
+  fill: none;
   pointer-events: none;
 }
 
@@ -1626,7 +1653,7 @@ select {
 }
 
 /* 次级候选（联邦卫星选择态里非最少方案的格）：弱显示不抢主高亮，但须可辨识
-   （0x66 描边曾淡到用户完全没注意，误以为只有最少方案的格可点） */
+   （过淡会被误以为只有最少方案的格可点） */
 .hex-highlight.dim {
   fill: #58a6ff26;
   stroke: #8fd8ffaa;
@@ -1665,7 +1692,7 @@ select {
   margin-bottom: 2px;
 }
 
-/* 行动栏（v6：地图顶部浮动条内容；idle 时整体隐藏不占位） */
+/* 行动栏（地图顶部浮动条内容；idle 时整体隐藏不占位） */
 .action-bar {
   display: flex;
   flex-direction: column;
@@ -1857,6 +1884,13 @@ select {
   object-fit: fill;
   border-radius: 4px;
   box-shadow: 0 0 6px #000000aa;
+  /* 压在轨道底图之上、玩家 token 之下（token z-index 5） */
+  z-index: 1;
+}
+
+/* LF 经济轨 L3/L4 覆盖板：压在轨道底图之上、玩家 token 之下（token z-index 5） */
+.rb-econ-overlay {
+  z-index: 1;
 }
 
 .rb-track-zone {
@@ -1885,12 +1919,17 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 整个等级格（含玩家 token）浮在覆盖板之上——transform 自成层叠上下文，
+     z-index 必须打在本容器上（打在内部 token 上会被关进容器内而无效） */
+  z-index: 5;
 }
 
 .rb-level .player-dot {
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%);
+  /* 玩家爬轨 token 永远浮在最上层（LF 经济覆盖板/QIC 覆盖板都不得遮挡） */
+  z-index: 5;
   /* 圆柱形（实体爬轨 token）：顶面椭圆 + 柱身，宽由 inline -- 高 = 宽 ÷ 0.72 */
   aspect-ratio: 0.72;
 }
@@ -2189,7 +2228,7 @@ select {
   align-items: center;
   justify-content: center;
   /* 堆叠 img 全部 absolute（.stack-tile），容器必须显式定高——否则高度塌陷，
-     整叠从槽位中心向下铺开（大屏/2 人局人数块堆叠时曾显著下滑） */
+     整叠会从槽位中心向下铺开 */
   aspect-ratio: 178 / 134;
 }
 
@@ -2395,7 +2434,7 @@ select {
   box-shadow: 0 8px 24px #000000cc;
   display: flex;
   flex-direction: column;
-  /* 字体与最近动作行一致（曾 12px 偏大） */
+  /* 字体与最近动作行一致 */
   font-size: min(1.3vh, 10.5px);
 }
 
@@ -2479,7 +2518,7 @@ select {
   filter: drop-shadow(0 0 10px var(--accent));
 }
 
-/* 时代标记条已下线（v6：RoundArc / FinalsProgress / BoostersStrip 取代） */
+/* 时代标记条已下线（由 ScoreboardBoard 实图计分板取代） */
 
 /* 玩家详情弹窗（整体放大 1.5 倍：内容与非详情一致，只是变大） */
 .player-detail-modal {
@@ -2574,7 +2613,7 @@ select {
   min-height: 84px;
 }
 
-/* 窄屏：允许纵向滚动（v6 三栏为宽屏设计，窄屏退化为页面级滚动） */
+/* 窄屏：允许纵向滚动（三栏为宽屏设计，窄屏退化为页面级滚动） */
 @media (max-width: 1100px) {
   .game-screen {
     height: auto;
@@ -2585,7 +2624,7 @@ select {
     min-height: 52vh;
   }
 }
-/* 事件日志（v6：地图左下角可折叠浮层；保留 AI thinking 与 reason 展示） */
+/* 事件日志（地图左下角可折叠浮层；保留 AI thinking 与 reason 展示） */
 .log-panel {
   position: absolute;
   left: 0.6vh;
@@ -2688,16 +2727,6 @@ select {
 
 .final-table tr.winner td {
   background: #2a2313;
-}
-
-/* 接管画面 */
-.taken-over-screen {
-  max-width: 480px;
-  margin: 80px auto;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 /* draft（种族选取）阶段 */

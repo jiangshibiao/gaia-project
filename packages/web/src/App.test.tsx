@@ -1,6 +1,6 @@
 /**
- * App 路由测试（M2c）：条件渲染 大厅 ↔ 房间等待 ↔ 对局 ↔ 终局，
- * 外加"连接被另一标签页接管"画面与刷新自动 resume。
+ * App 路由测试：条件渲染 大厅 ↔ 房间等待 ↔ 对局 ↔ 终局，
+ * 外加同座位多连接共存（被动断开自动重连 resume，无接管画面）与刷新自动 resume。
  */
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';

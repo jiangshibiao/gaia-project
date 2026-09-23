@@ -80,8 +80,11 @@ describe('<DraftView>', () => {
     const order = screen.getByTestId('draft-turn-order');
     expect(order).toHaveTextContent('1. 乙（先手）');
     expect(order).toHaveTextContent('2. 甲');
-    // 计分片：6 回合 + 2 终局 = 8 张图
-    expect(screen.getByTestId('draft-scoring').querySelectorAll('img.draft-scoring-img')).toHaveLength(8);
+    // 计分板：整块实图计分板（与对局右栏同款）——6 回合计分片 + 2 终局片入槽
+    const sb = screen.getByTestId('draft-scoring');
+    expect(sb.querySelector('[data-testid="scoreboard-board"]')).not.toBeNull();
+    expect(sb.querySelectorAll('img.sb-round-tile')).toHaveLength(6);
+    expect(sb.querySelectorAll('img.sb-final-tile')).toHaveLength(2);
     // 地图预览容器渲染（BoardSvg）
     expect(screen.getByTestId('draft-map').querySelector('svg')).not.toBeNull();
   });

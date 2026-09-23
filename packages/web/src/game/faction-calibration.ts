@@ -21,8 +21,8 @@
  *   照片、几何一致，已抽查互验，共用一份标定）；
  * - moweyds：BGG 9503664 西班牙版开箱照下半块（Octopoides，2950×1879），
  *   与 9503663 同组照片同版型，共用 LF_PHOTO 标定（仅宽高比另给）。
- *   曾误用 wellplayed 图——实为 space-giants 板（大胡子蓝老头；
- *   moweyds 真身为触须章鱼怪，见 factions/mowyeds.jpg）。
+ *   注意勿与 space-giants 板混淆（space-giants 为大胡子蓝老头，moweyds
+ *   为触须章鱼怪，见 factions/mowyeds.jpg）。
  */
 import type { FactionId } from '@gaia/engine';
 import { factionBoardImage } from '../assets';
@@ -60,6 +60,10 @@ export interface FactionBoardCalibration {
   ac2ActionSlot?: RelPoint;
   /** tinkeroids/moweyds 3 步改造星球标注格（大轮盘下三小格；setup 抽取结果按序放入）。 */
   threeStepSlots?: readonly RelPoint[];
+  /** 资源轨（板顶 0-15 单轨）：cell0 中心 x、格距 dx、token 中心 y、token 直径 cellW
+   *  （略小于格宽；黄钱×2/白矿×1/蓝知×1 实体风 token）。
+   *  标定图：TEMPLATE=Terrans.jpg、LF_PHOTO=darkanians BGG 照、LF_RENDER=tinkeroids 官方渲染。 */
+  resourceTrack?: { x0: number; dx: number; y: number; cellW: number };
 }
 
 /** 基础族扫描图宽高比（1753×1117）。 */
@@ -85,9 +89,11 @@ const TEMPLATE = {
   piSlot: { x: 0.172, y: 0.526 },
   ac1Slot: { x: 0.518, y: 0.526 },
   ac2Slot: { x: 0.63, y: 0.526 },
-  // ac2 特殊行动八边形在学院槽正下方（terrans/gleens 实测 ≈(0.636,0.60)）
+  // ac2 特殊行动八边形在学院槽正下方（按 terrans/gleens 板标定 ≈(0.636,0.60)）
   ac2ActionSlot: { x: 0.636, y: 0.6 },
   gaiaformerSlots: [0.806, 0.884, 0.961].map((x) => ({ x, y: 0.352 })),
+  // 资源轨（按 1753×1117 图标定：cell0 圆心 0.0502、格距 0.0600、圆心高 0.0815；token 0.049 略小于格）
+  resourceTrack: { x0: 0.0502, dx: 0.06, y: 0.0815, cellW: 0.049 },
 } satisfies Omit<FactionBoardCalibration, 'image'>;
 
 /** bescods：PI 与学院位置左右互换。 */
@@ -111,13 +117,17 @@ const LF_PHOTO = {
     gaia: { x: 0.088, y: 0.231 },
   },
   brainstoneOffset: { x: -0.045, y: 0.02 },
-  mineSlots: [0.1707, 0.2213, 0.2718, 0.3223, 0.3728, 0.4233, 0.4739, 0.5226].map((x) => ({ x, y: 0.903 })),
+  // 矿行（PIL 亮段标定 darkanians 板：0.1563 起、间距 0.0493；space-giants 板
+  // 同法标定一致；TS/实验室/PI/学院行与模板同位）
+  mineSlots: [0.1563, 0.2056, 0.2547, 0.304, 0.3531, 0.4019, 0.4505, 0.499].map((x) => ({ x, y: 0.903 })),
   tsSlots: [0.1585, 0.2073, 0.2561, 0.3049].map((x) => ({ x, y: 0.715 })),
   labSlots: [0.505, 0.575, 0.648].map((x) => ({ x, y: 0.721 })),
   piSlot: { x: 0.166, y: 0.519 },
   ac1Slot: { x: 0.523, y: 0.521 },
   ac2Slot: { x: 0.632, y: 0.535 },
   gaiaformerSlots: [0.807, 0.887, 0.963].map((x) => ({ x, y: 0.355 })),
+  // 资源轨（按 2870×1851 图标定：cell0 圆心 0.0436、格距 0.0609、圆心高 0.0837；token 0.050 略小于格）
+  resourceTrack: { x0: 0.0436, dx: 0.0609, y: 0.0837, cellW: 0.05 },
 } satisfies Omit<FactionBoardCalibration, 'image'>;
 
 const BASE_FACTIONS: readonly FactionId[] = [
@@ -142,14 +152,16 @@ function buildCalibrations(): Record<FactionId, FactionBoardCalibration> {
     out[f] = { image: factionBoardImage(f), ...TEMPLATE };
   }
   out.bescods = { image: factionBoardImage('bescods'), ...TEMPLATE, ...BESCODS, specialSlot: { x: 0.867, y: 0.219 } };
-  // 格伦星人：专属联邦片放在族板印有联邦徽章的位置（PI 格右侧大格，实测徽章中心
-  // (500,593)/1753×1117），不再叠压 PI 棋子（要塞与其他族同位显示）。
+  // 格伦星人：专属联邦片放在族板印有联邦徽章的位置（PI 格右侧大格，徽章中心
+  // (500,593)/1753×1117），不叠压 PI 棋子（要塞与其他族同位显示）。
   out.gleens = { image: factionBoardImage('gleens'), ...TEMPLATE, gleensFedSlot: { x: 0.285, y: 0.531 } };
   out.tinkeroids = {
     image: factionBoardImage('tinkeroids'),
     ...TEMPLATE,
     aspect: LF_RENDER_ASPECT,
-    // 3 步改造星球标注格（2000×1267 实测：大轮盘下三小格）
+    // 资源轨（按 2000×1267 官方渲染标定：cell0 圆心 0.065、格距 0.0593、圆心高 0.0695；token 0.0485）
+    resourceTrack: { x0: 0.065, dx: 0.0593, y: 0.0695, cellW: 0.0485 },
+    // 3 步改造星球标注格（按 2000×1267 图标定：大轮盘下三小格）
     threeStepSlots: [
       { x: 0.757, y: 0.583 },
       { x: 0.79, y: 0.583 },
@@ -164,10 +176,10 @@ function buildCalibrations(): Record<FactionId, FactionBoardCalibration> {
     image: factionBoardImage('moweyds'),
     ...LF_PHOTO,
     aspect: 2950 / 1879,
-    // 矿行印刷与 darkanians 不同（2026-09-22 实测：槽 x 起始 0.1578、间距 0.0485，
-    // LF_PHOTO 为 0.1707/0.0506——token 曾整体右偏；TS/实验室/PI/学院行实测与 LF_PHOTO 一致不动）
+    // 矿行印刷与 darkanians 不同（按 2950×1879 图标定：槽 x 起始 0.1578、间距 0.0485；
+    // TS/实验室/PI/学院行与 LF_PHOTO 一致）
     mineSlots: [0.1578, 0.2061, 0.2541, 0.3027, 0.3512, 0.3997, 0.4483, 0.4969].map((x) => ({ x, y: 0.903 })),
-    // 3 步改造星球标注格（2950×1879 实测）
+    // 3 步改造星球标注格（按 2950×1879 图标定）
     threeStepSlots: [
       { x: 0.745, y: 0.581 },
       { x: 0.78, y: 0.581 },
@@ -218,7 +230,7 @@ export const BUILDING_SPRITE: Record<'mine' | 'ts' | 'lab' | 'pi' | 'academy', B
 };
 
 /** gaiaformer 图宽度（相对图宽）。棋子图内容占比仅 ~42%（透明边距大），
- *  0.078 时可见内容 ≈ 0.032 ≈ 槽位八边形（曾 0.062，用户反馈明显偏小）。 */
+ *  0.078 时可见内容 ≈ 0.032 ≈ 槽位八边形大小。 */
 export const GAIAFORMER_WIDTH = 0.078;
 /** 脑石图宽度（相对图宽）。 */
 export const BRAINSTONE_WIDTH = 0.032;
